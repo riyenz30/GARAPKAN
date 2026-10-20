@@ -145,7 +145,17 @@ public class IActivityManagerProxy extends ClassInvocationStub {
                     args[1] = BlackBoxCore.getHostPkg();
                 }
 
-                ProviderInfo providerInfo = BlackBoxCore.getBPackageManager()
+                // GSF providers MUST read from host, not sandbox.
+                // Sandbox GSF has no checkin android_id, causing Play Store
+                // "Server error" because X-DFE-Device-Id header is empty/0.
+                boolean forceHost = "com.google.android.gsf.gservices".equals(auth)
+                        || "com.google.android.gsf.subscribedfeeds".equals(auth);
+                if (forceHost) {
+                    Slog.w(TAG, "Forcing GSF provider '" + auth + "' to resolve from HOST for valid checkin/android_id");
+                }
+
+                ProviderInfo providerInfo = forceHost ? null :
+                    BlackBoxCore.getBPackageManager()
                         .resolveContentProvider(
                                 (String) auth, GET_META_DATA, BActivityThread.getUserId());
                 if (providerInfo != null) {
