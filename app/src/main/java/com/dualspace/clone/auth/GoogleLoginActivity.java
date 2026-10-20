@@ -435,7 +435,18 @@ public class GoogleLoginActivity extends Activity {
                 try { mAmResponse.onResult(resBundle); } catch (Throwable ignored) {}
             }
 
-            // Launch Play Store to refresh its UI
+            // Kill stale Play Store and GMS processes so they reload account from DB
+            try {
+                Slog.w(TAG, "Killing sandbox processes to force fresh account reload");
+                BlackBoxCore.get().stopPackage("com.android.vending", mUserId);
+                BlackBoxCore.get().stopPackage("com.google.android.gms", mUserId);
+                BlackBoxCore.get().stopPackage("com.google.android.gsf", mUserId);
+                Thread.sleep(600);
+            } catch (Throwable t) {
+                Slog.w(TAG, "stopPackage error (non-fatal): " + t.getMessage());
+            }
+
+            // Launch Play Store fresh — it will now find the account and show Dashboard
             try {
                 Intent launchIntent = new Intent();
                 launchIntent.setComponent(new android.content.ComponentName("com.android.vending", "com.android.vending.AssetBrowserActivity"));
