@@ -46,7 +46,10 @@ public class IAccountManagerProxy extends BinderInvocationStub {
 
     @Override
     public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
-        Slog.d(TAG, "call " + method.getName());
+        String name = method.getName();
+        if (!"getAuthToken".equals(name) && !"peekAuthToken".equals(name)) {
+            Slog.w(TAG, "call " + name);
+        }
         return super.invoke(proxy, method, args);
     }
 
@@ -82,7 +85,9 @@ public class IAccountManagerProxy extends BinderInvocationStub {
 
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            return BAccountManager.get().getAccountsForPackage((String) args[0], (int) args[1]);
+            Account[] result = BAccountManager.get().getAccountsForPackage((String) args[0], (int) args[1]);
+            Slog.w(TAG, "getAccountsForPackage(pkg=" + args[0] + ", uid=" + args[1] + ") -> " + (result != null ? result.length : "null") + " accounts");
+            return result;
         }
     }
 
@@ -91,7 +96,9 @@ public class IAccountManagerProxy extends BinderInvocationStub {
 
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            return BAccountManager.get().getAccountsByTypeForPackage((String) args[0], (String) args[1]);
+            Account[] result = BAccountManager.get().getAccountsByTypeForPackage((String) args[0], (String) args[1]);
+            Slog.w(TAG, "getAccountsByTypeForPackage(type=" + args[0] + ", pkg=" + args[1] + ") -> " + (result != null ? result.length : "null") + " accounts");
+            return result;
         }
     }
 
@@ -120,7 +127,14 @@ public class IAccountManagerProxy extends BinderInvocationStub {
 
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            return BAccountManager.get().getAccountsAsUser((String) args[0]);
+            Account[] result = BAccountManager.get().getAccountsAsUser((String) args[0]);
+            Slog.w(TAG, "getAccountsAsUser(type=" + args[0] + ") -> " + (result != null ? result.length : "null") + " accounts");
+            if (result != null) {
+                for (Account a : result) {
+                    Slog.w(TAG, "  account: " + a.name + " / " + a.type);
+                }
+            }
+            return result;
         }
     }
 
@@ -390,6 +404,47 @@ public class IAccountManagerProxy extends BinderInvocationStub {
             return BAccountManager.get().getAccountsAndVisibilityForPackage((String) args[0],
                     (String) args[1]
             );
+        }
+    }
+
+    @ProxyMethod("hasAccountAccess")
+    public static class hasAccountAccess extends MethodHook {
+
+        @Override
+        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
+            Slog.w(TAG, "hasAccountAccess(account=" + (args != null && args.length > 0 ? args[0] : null)
+                    + ", pkg=" + (args != null && args.length > 1 ? args[1] : null) + ") -> TRUE");
+            return true;
+        }
+    }
+
+    @ProxyMethod("someUserHasAccount")
+    public static class someUserHasAccount extends MethodHook {
+
+        @Override
+        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
+            Slog.w(TAG, "someUserHasAccount(account=" + (args != null && args.length > 0 ? args[0] : null) + ") -> TRUE");
+            return true;
+        }
+    }
+
+    @ProxyMethod("hasFeatures")
+    public static class hasFeatures extends MethodHook {
+
+        @Override
+        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
+            Slog.w(TAG, "hasFeatures called");
+            if (args != null && args.length > 0 && args[0] instanceof IAccountManagerResponse) {
+                try {
+                    IAccountManagerResponse response = (IAccountManagerResponse) args[0];
+                    Bundle result = new Bundle();
+                    result.putBoolean(android.accounts.AccountManager.KEY_BOOLEAN_RESULT, true);
+                    response.onResult(result);
+                } catch (Throwable t) {
+                    Slog.w(TAG, "hasFeatures onResult error: " + t.getMessage());
+                }
+            }
+            return 0;
         }
     }
 

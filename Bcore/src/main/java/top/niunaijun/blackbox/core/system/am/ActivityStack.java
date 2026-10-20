@@ -713,9 +713,11 @@ public class ActivityStack {
             if (activityRecordByToken != null) {
                 ActivityRecord resultTo = findActivityRecordByToken(userId, activityRecordByToken.resultTo);
                 if (resultTo != null) {
+                    Slog.w(TAG, "getCallingPackage: " + resultTo.info.packageName + " for " + activityRecordByToken.info.packageName);
                     return resultTo.info.packageName;
                 }
             }
+            Slog.w(TAG, "getCallingPackage: resultTo not found for token=" + token + ", fallback=" + BlackBoxCore.getHostPkg());
             return BlackBoxCore.getHostPkg();
         }
     }
