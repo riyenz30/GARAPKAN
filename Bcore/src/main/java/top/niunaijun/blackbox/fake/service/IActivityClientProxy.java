@@ -1,17 +1,22 @@
 package top.niunaijun.blackbox.fake.service;
 
 import android.app.ActivityManager;
+import android.content.Intent;
 import android.os.IBinder;
 
 import java.lang.reflect.Method;
 
 import black.android.app.BRActivityClient;
+import black.android.app.BRActivityClientActivityClientControllerSingleton;
 import black.android.util.BRSingleton;
+import top.niunaijun.blackbox.BlackBoxCore;
+import top.niunaijun.blackbox.app.BActivityThread;
 import top.niunaijun.blackbox.fake.frameworks.BActivityManager;
 import top.niunaijun.blackbox.fake.hook.ClassInvocationStub;
 import top.niunaijun.blackbox.fake.hook.MethodHook;
 import top.niunaijun.blackbox.fake.hook.ProxyMethod;
 import top.niunaijun.blackbox.fake.hook.ScanClass;
+import top.niunaijun.blackbox.utils.Slog;
 import top.niunaijun.blackbox.utils.compat.TaskDescriptionCompat;
 
 
@@ -39,6 +44,11 @@ public class IActivityClientProxy extends ClassInvocationStub {
         Object instance = BRActivityClient.get().getInstance();
         Object singleton = BRActivityClient.get(instance).INTERFACE_SINGLETON();
         BRSingleton.get(singleton)._set_mInstance(proxyInvocation);
+        try {
+            BRActivityClientActivityClientControllerSingleton.get(singleton)._set_mKnownInstance(proxyInvocation);
+        } catch (Throwable t) {
+            Slog.w(TAG, "Failed to set mKnownInstance in inject(): " + t.getMessage());
+        }
     }
 
     @Override
@@ -61,6 +71,14 @@ public class IActivityClientProxy extends ClassInvocationStub {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
             IBinder token = (IBinder) args[0];
+            int resultCode = 0;
+            Intent resultData = null;
+            try {
+                if (args.length > 1) resultCode = (int) args[1];
+                if (args.length > 2) resultData = (Intent) args[2];
+            } catch (Exception ignored) {}
+            Slog.w(TAG, "finishActivity: resultCode=" + resultCode
+                    + " resultData=" + (resultData != null ? resultData.toUri(0) : "null"));
             BActivityManager.get().onFinishActivity(token);
             return method.invoke(who, args);
         }
@@ -94,6 +112,49 @@ public class IActivityClientProxy extends ClassInvocationStub {
             ActivityManager.TaskDescription td = (ActivityManager.TaskDescription) args[1];
             args[1] = TaskDescriptionCompat.fix(td);
             return method.invoke(who, args);
+        }
+    }
+
+    /**
+     * Hook getLaunchedFromPackage so GMS sees the virtual caller, not the host stub.
+     * On Android 12+, Activity.getLaunchedFromPackage() goes through IActivityClientController.
+     * Without this hook, GMS SignInActivity sees com.dualspace.clone as the caller and
+     * returns DEVELOPER_ERROR because that package has no Google API project configured.
+     */
+    @ProxyMethod("getLaunchedFromPackage")
+    public static class GetLaunchedFromPackage extends MethodHook {
+        @Override
+        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
+            IBinder token = (IBinder) args[0];
+            String callingPkg = BlackBoxCore.getBActivityManager()
+                    .getCallingPackage(token, BActivityThread.getUserId());
+            String hostPkg = BlackBoxCore.getHostPkg();
+            if (callingPkg != null && !callingPkg.equals(hostPkg)) {
+                Slog.w(TAG, "getLaunchedFromPackage: returning virtual caller=" + callingPkg);
+                return callingPkg;
+            }
+            // If we couldn't find a virtual caller, use the current app's package
+            String appPkg = BActivityThread.getAppPackageName();
+            if (appPkg != null) {
+                Slog.w(TAG, "getLaunchedFromPackage: fallback to appPkg=" + appPkg);
+                return appPkg;
+            }
+            // Last resort: delegate to real system
+            Slog.w(TAG, "getLaunchedFromPackage: delegating to real system");
+            return method.invoke(who, args);
+        }
+    }
+
+    /**
+     * Hook getLaunchedFromUid so GMS sees the virtual UID, not the host UID.
+     */
+    @ProxyMethod("getLaunchedFromUid")
+    public static class GetLaunchedFromUid extends MethodHook {
+        @Override
+        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
+            int bUid = BActivityThread.getBUid();
+            Slog.w(TAG, "getLaunchedFromUid: returning virtual uid=" + bUid);
+            return bUid;
         }
     }
 }

@@ -246,4 +246,30 @@ public class ActivityManagerCommonProxy {
             return BlackBoxCore.getBActivityManager().getCallingActivity((IBinder) args[0], BActivityThread.getUserId());
         }
     }
+
+    @ProxyMethod("getLaunchedFromPackage")
+    public static class getLaunchedFromPackage extends MethodHook {
+        @Override
+        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
+            IBinder token = (IBinder) args[0];
+            String callingPkg = BlackBoxCore.getBActivityManager().getCallingPackage(token, BActivityThread.getUserId());
+            String hostPkg = BlackBoxCore.getHostPkg();
+            if (callingPkg != null && !callingPkg.equals(hostPkg)) {
+                return callingPkg;
+            }
+            String appPkg = BActivityThread.getAppPackageName();
+            if (appPkg != null) {
+                return appPkg;
+            }
+            return method.invoke(who, args);
+        }
+    }
+
+    @ProxyMethod("getLaunchedFromUid")
+    public static class getLaunchedFromUid extends MethodHook {
+        @Override
+        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
+            return BActivityThread.getBUid();
+        }
+    }
 }
