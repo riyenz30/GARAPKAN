@@ -80,7 +80,7 @@ public class GmsCore {
      * only adds its own processes (com.android.vending plus a background one) to every slot,
      * which is real memory pressure on smaller phones. Off unless the host turns it on.
      */
-    private static volatile boolean sMirrorPlayStore = false;
+    private static volatile boolean sMirrorPlayStore = true;
 
     public static void setMirrorPlayStore(boolean mirror) {
         sMirrorPlayStore = mirror;

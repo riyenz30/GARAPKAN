@@ -68,7 +68,7 @@ object Prefs {
      * memory pressure is what makes Android destroy a clone's screens in the background.
      */
     var mirrorPlayStore: Boolean
-        get() = sp.getBoolean("mirror_play_store", false)
+        get() = sp.getBoolean("mirror_play_store", true)
         set(v) = sp.edit { putBoolean("mirror_play_store", v) }
 
     // ---- permissions for clones ----
