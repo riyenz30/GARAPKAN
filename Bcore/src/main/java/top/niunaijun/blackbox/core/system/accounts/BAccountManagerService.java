@@ -535,10 +535,13 @@ public class BAccountManagerService extends IBAccountManagerService.Stub impleme
         final boolean customTokens =
                 authenticatorInfo != null && authenticatorInfo.desc.customTokens;
 
-        
-        final String callerPkg = loginOptions.getString(AccountManager.KEY_ANDROID_PACKAGE_NAME);
+        if (loginOptions == null) {
+            loginOptions = new Bundle();
+        }
 
-        
+        String rawCallerPkg = loginOptions.getString(AccountManager.KEY_ANDROID_PACKAGE_NAME);
+        final String callerPkg = (rawCallerPkg != null && !rawCallerPkg.isEmpty()) ? rawCallerPkg : "com.android.vending";
+
         loginOptions.putInt(AccountManager.KEY_CALLER_UID, Binder.getCallingUid());
         loginOptions.putInt(AccountManager.KEY_CALLER_PID, Binder.getCallingPid());
 
@@ -546,11 +549,11 @@ public class BAccountManagerService extends IBAccountManagerService.Stub impleme
             loginOptions.putBoolean(AccountManagerCompat.KEY_NOTIFY_ON_FAILURE, true);
         }
 
-        
-        
-        if (!customTokens) {
+        // PRIORITY 1: Always check standard token database first (regardless of customTokens)
+        {
             String authToken = readAuthTokenInternal(accounts, account, authTokenType);
             if (authToken != null) {
+                Slog.w(TAG, "getAuthToken: found cached token for " + authTokenType + " in standard DB, returning directly");
                 Bundle result = new Bundle();
                 result.putString(AccountManager.KEY_AUTHTOKEN, authToken);
                 result.putString(AccountManager.KEY_ACCOUNT_NAME, account.name);
@@ -558,59 +561,55 @@ public class BAccountManagerService extends IBAccountManagerService.Stub impleme
                 onResult(response, result);
                 return;
             }
-
-            // On-the-fly token fetch for Google accounts using Master Token
-            if ("com.google".equals(account.type)) {
-                BAccount bAccount = accounts.getAccount(account);
-                if (bAccount != null && bAccount.password != null && !bAccount.password.isEmpty()) {
-                    Slog.w(TAG, "getAuthToken: no cached token for " + authTokenType + ", attempting on-the-fly fetch using master token");
-                    final String masterToken = bAccount.password;
-                    final String email = account.name;
-                    new Thread(() -> {
-                        try {
-                            String fetched = fetchGoogleSubTokenSync(email, masterToken, authTokenType, callerPkg);
-                            if (fetched != null) {
-                                saveAuthTokenToDatabase(accounts, account, authTokenType, fetched);
-                                Bundle result = new Bundle();
-                                result.putString(AccountManager.KEY_AUTHTOKEN, fetched);
-                                result.putString(AccountManager.KEY_ACCOUNT_NAME, account.name);
-                                result.putString(AccountManager.KEY_ACCOUNT_TYPE, account.type);
-                                onResult(response, result);
-                                Slog.w(TAG, "getAuthToken: on-the-fly fetch SUCCESS for " + authTokenType);
-                            } else {
-                                Slog.w(TAG, "getAuthToken: on-the-fly fetch returned null for " + authTokenType + ", falling back to authenticator");
-                                delegateToAuthenticator(accounts, response, account, authTokenType, loginOptions, expectActivityLaunch, customTokens, callerPkg, notifyOnAuthFailure);
-                            }
-                        } catch (Throwable t) {
-                            Slog.w(TAG, "getAuthToken: on-the-fly fetch error for " + authTokenType + ": " + t.getMessage());
-                            try {
-                                delegateToAuthenticator(accounts, response, account, authTokenType, loginOptions, expectActivityLaunch, customTokens, callerPkg, notifyOnAuthFailure);
-                            } catch (Throwable t2) {
-                                Slog.w(TAG, "getAuthToken: delegate error: " + t2.getMessage());
-                            }
-                        }
-                    }, "GoogleSubTokenFetch").start();
-                    return;
-                }
-            }
         }
 
+        // PRIORITY 2: Check custom token cache (for authenticators with customTokens=true like GMS)
         if (customTokens) {
-            
-            String token = readCachedTokenInternal(
-                    accounts,
-                    account,
-                    authTokenType,
-                    callerPkg);
+            String token = readCachedTokenInternal(accounts, account, authTokenType, callerPkg);
             if (token != null) {
-                if (Log.isLoggable(TAG, Log.VERBOSE)) {
-                    Log.v(TAG, "getAuthToken: cache hit ofr custom token authenticator.");
-                }
+                Slog.w(TAG, "getAuthToken: found cached custom token for " + authTokenType);
                 Bundle result = new Bundle();
                 result.putString(AccountManager.KEY_AUTHTOKEN, token);
                 result.putString(AccountManager.KEY_ACCOUNT_NAME, account.name);
                 result.putString(AccountManager.KEY_ACCOUNT_TYPE, account.type);
                 onResult(response, result);
+                return;
+            }
+        }
+
+        // PRIORITY 3: On-the-fly token fetch for Google accounts using Master Token
+        if ("com.google".equals(account.type)) {
+            BAccount bAccount = accounts.getAccount(account);
+            if (bAccount != null && bAccount.password != null && !bAccount.password.isEmpty()) {
+                Slog.w(TAG, "getAuthToken: no cached token for " + authTokenType + ", attempting on-the-fly fetch using master token");
+                final String masterToken = bAccount.password;
+                final String email = account.name;
+                final BUserAccounts fAccounts = accounts;
+                final Bundle fLoginOptions = loginOptions;
+                new Thread(() -> {
+                    try {
+                        String fetched = fetchGoogleSubTokenSync(email, masterToken, authTokenType, callerPkg);
+                        if (fetched != null) {
+                            saveAuthTokenToDatabase(fAccounts, account, authTokenType, fetched);
+                            Bundle result = new Bundle();
+                            result.putString(AccountManager.KEY_AUTHTOKEN, fetched);
+                            result.putString(AccountManager.KEY_ACCOUNT_NAME, account.name);
+                            result.putString(AccountManager.KEY_ACCOUNT_TYPE, account.type);
+                            onResult(response, result);
+                            Slog.w(TAG, "getAuthToken: on-the-fly fetch SUCCESS for " + authTokenType);
+                        } else {
+                            Slog.w(TAG, "getAuthToken: on-the-fly fetch returned null for " + authTokenType + ", falling back to authenticator");
+                            delegateToAuthenticator(fAccounts, response, account, authTokenType, fLoginOptions, expectActivityLaunch, customTokens, callerPkg, notifyOnAuthFailure);
+                        }
+                    } catch (Throwable t) {
+                        Slog.w(TAG, "getAuthToken: on-the-fly fetch error for " + authTokenType + ": " + t.getMessage());
+                        try {
+                            delegateToAuthenticator(fAccounts, response, account, authTokenType, fLoginOptions, expectActivityLaunch, customTokens, callerPkg, notifyOnAuthFailure);
+                        } catch (Throwable t2) {
+                            Slog.w(TAG, "getAuthToken: delegate error: " + t2.getMessage());
+                        }
+                    }
+                }, "GoogleSubTokenFetch").start();
                 return;
             }
         }
