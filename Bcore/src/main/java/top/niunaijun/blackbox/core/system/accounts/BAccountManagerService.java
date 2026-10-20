@@ -102,39 +102,6 @@ public class BAccountManagerService extends IBAccountManagerService.Stub impleme
         mPms = BPackageManagerService.get();
     }
 
-    /**
-     * Synchronise Google accounts from the host device's AccountManager into
-     * the virtual BUserAccounts for the given sandbox user.  This is the
-     * bridge that lets Google Sign-In work: the user logs in via the host
-     * GMS wizard (which stores the account in the real OS), and this method
-     * copies it into the sandbox so cloned Play Store / apps can see it.
-     */
-    private void syncHostGoogleAccounts(int userId) {
-        try {
-            AccountManager hostAm = AccountManager.get(mContext);
-            Account[] hostAccounts = hostAm.getAccountsByType("com.google");
-            if (hostAccounts == null || hostAccounts.length == 0) return;
-
-            BUserAccounts accounts = getUserAccounts(userId);
-            synchronized (accounts.lock) {
-                for (Account hostAcc : hostAccounts) {
-                    boolean exists = false;
-                    for (BAccount bAcc : accounts.accounts) {
-                        if (bAcc.account.equals(hostAcc)) {
-                            exists = true;
-                            break;
-                        }
-                    }
-                    if (!exists) {
-                        Slog.w(TAG, "syncHostGoogleAccounts: importing " + hostAcc.name + " into userId=" + userId);
-                        addAccountInternal(accounts, hostAcc, null, null, null);
-                    }
-                }
-            }
-        } catch (Throwable t) {
-            Slog.w(TAG, "syncHostGoogleAccounts failed: " + t.getMessage());
-        }
-    }
 
     @Override
     public void systemReady() {
@@ -249,7 +216,6 @@ public class BAccountManagerService extends IBAccountManagerService.Stub impleme
 
     @Override
     public Account[] getAccountsForPackage(String packageName, int uid, int userId) throws RemoteException {
-        syncHostGoogleAccounts(userId);
         BUserAccounts userAccounts = getUserAccounts(userId);
         List<Account> accounts = new ArrayList<>();
         synchronized (userAccounts.lock) {
@@ -265,9 +231,6 @@ public class BAccountManagerService extends IBAccountManagerService.Stub impleme
 
     @Override
     public Account[] getAccountsByTypeForPackage(String type, String packageName, int userId) throws RemoteException {
-        if (type == null || "com.google".equals(type)) {
-            syncHostGoogleAccounts(userId);
-        }
         BUserAccounts userAccounts = getUserAccounts(userId);
         List<Account> accounts = new ArrayList<>();
         synchronized (userAccounts.lock) {
@@ -285,9 +248,6 @@ public class BAccountManagerService extends IBAccountManagerService.Stub impleme
 
     @Override
     public Account[] getAccountsAsUser(String accountType, int userId) throws RemoteException {
-        if (accountType == null || "com.google".equals(accountType)) {
-            syncHostGoogleAccounts(userId);
-        }
         BUserAccounts userAccounts = getUserAccounts(userId);
         List<Account> accounts = new ArrayList<>();
         synchronized (userAccounts.lock) {
@@ -304,10 +264,6 @@ public class BAccountManagerService extends IBAccountManagerService.Stub impleme
     public void getAccountByTypeAndFeatures(IAccountManagerResponse response, String accountType, String[] features, int userId) throws RemoteException {
         if (response == null) throw new IllegalArgumentException("response is null");
         if (accountType == null) throw new IllegalArgumentException("accountType is null");
-
-        if ("com.google".equals(accountType)) {
-            syncHostGoogleAccounts(userId);
-        }
 
         String opPackageName = getCallingPackageName();
 
@@ -355,10 +311,6 @@ public class BAccountManagerService extends IBAccountManagerService.Stub impleme
     public void getAccountsByFeatures(IAccountManagerResponse response, String type, String[] features, int userId) throws RemoteException {
         if (response == null) throw new IllegalArgumentException("response is null");
         if (type == null) throw new IllegalArgumentException("accountType is null");
-
-        if ("com.google".equals(type)) {
-            syncHostGoogleAccounts(userId);
-        }
 
         String opPackageName = getCallingPackageName();
         
@@ -710,47 +662,13 @@ public class BAccountManagerService extends IBAccountManagerService.Stub impleme
 
         final Bundle options = (optionsIn == null) ? new Bundle() : optionsIn;
 
-        // For Google accounts, delegate directly to the host system AccountManager.
-        // The host OS AccountManager has full permissions, live GMS Chimera modules,
-        // and can reliably produce the Google Sign In intent/wizard without virtual sandbox binding issues.
-        if ("com.google".equals(accountType)) {
-            top.niunaijun.blackbox.utils.Slog.w(TAG, "addAccount: com.google detected, delegating to host AccountManager");
-            try {
-                AccountManager hostAm = AccountManager.get(mContext);
-                hostAm.addAccount(accountType, authTokenType, requiredFeatures, options, null, new android.accounts.AccountManagerCallback<Bundle>() {
-                    @Override
-                    public void run(android.accounts.AccountManagerFuture<Bundle> future) {
-                        try {
-                            Bundle bundle = future.getResult();
-                            top.niunaijun.blackbox.utils.Slog.w(TAG, "addAccount host callback success: bundle=" + (bundle != null ? bundle.keySet() : "null"));
-                            if (bundle != null && bundle.containsKey(AccountManager.KEY_INTENT)) {
-                                Intent intent = bundle.getParcelable(AccountManager.KEY_INTENT);
-                                top.niunaijun.blackbox.utils.Slog.w(TAG, "addAccount host returned KEY_INTENT: " + intent);
-                                if (intent != null) {
-                                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                                }
-                            }
-                            response.onResult(bundle);
-                        } catch (Exception e) {
-                            top.niunaijun.blackbox.utils.Slog.w(TAG, "addAccount host callback error: " + e.getMessage());
-                            try {
-                                response.onError(AccountManager.ERROR_CODE_REMOTE_EXCEPTION, e.getMessage());
-                            } catch (RemoteException ignored) {}
-                        }
-                    }
-                }, mHandler);
-                return;
-            } catch (Throwable t) {
-                top.niunaijun.blackbox.utils.Slog.w(TAG, "addAccount: host delegation failed, falling back to virtual Session", t);
-            }
-        }
-
         BUserAccounts accounts = getUserAccounts(userId);
         new Session(accounts, response, accountType, expectActivityLaunch,
                 true , null ,
                 false , true ) {
             @Override
             public void run() throws RemoteException {
+                top.niunaijun.blackbox.utils.Slog.w(TAG, "Virtual Session.run: calling mAuthenticator.addAccount for " + mAccountType);
                 mAuthenticator.addAccount(this, mAccountType, authTokenType, requiredFeatures,
                         options);
             }
@@ -975,7 +893,6 @@ public class BAccountManagerService extends IBAccountManagerService.Stub impleme
     }
 
     public Account[] getAccounts(int userId, String opPackageName) {
-        syncHostGoogleAccounts(userId);
         BUserAccounts userAccounts = getUserAccounts(userId);
         List<Account> list = new ArrayList<>();
         synchronized (userAccounts.lock) {

@@ -91,6 +91,34 @@ public class ActivityManagerCommonProxy {
                         StartActivityCompat.getResolvedType(args),
                         BActivityThread.getUserId());
                 if (resolveInfo == null) {
+                    // Before falling back to the host OS, check whether the target
+                    // component belongs to a package already installed inside the
+                    // sandbox (e.g. GMS split-APK activities that are not declared in
+                    // the base manifest and therefore missing from virtual PMS).
+                    // If so, resolve them from the host PackageManager and keep the
+                    // launch inside the sandbox — never leak to the host.
+                    if (intent.getComponent() != null) {
+                        String targetPkg = intent.getComponent().getPackageName();
+                        if (BlackBoxCore.get().isInstalled(targetPkg, BActivityThread.getUserId())) {
+                            try {
+                                android.content.pm.ActivityInfo ai = BlackBoxCore.getContext()
+                                        .getPackageManager()
+                                        .getActivityInfo(intent.getComponent(),
+                                                PackageManager.GET_META_DATA);
+                                if (ai != null) {
+                                    resolveInfo = new ResolveInfo();
+                                    resolveInfo.activityInfo = ai;
+                                    Slog.w(TAG, "Resolved missing sandbox activity from host PM: "
+                                            + intent.getComponent());
+                                }
+                            } catch (PackageManager.NameNotFoundException e) {
+                                Slog.w(TAG, "Activity not found in host PM either: "
+                                        + intent.getComponent());
+                            }
+                        }
+                    }
+                }
+                if (resolveInfo == null) {
                     intent.setPackage(origPackage);
                     return method.invoke(who, args);
                 }
