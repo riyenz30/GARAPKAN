@@ -535,18 +535,16 @@ public class BAccountManagerService extends IBAccountManagerService.Stub impleme
         final boolean customTokens =
                 authenticatorInfo != null && authenticatorInfo.desc.customTokens;
 
-        if (loginOptions == null) {
-            loginOptions = new Bundle();
-        }
+        final Bundle finalLoginOptions = (loginOptions != null) ? loginOptions : new Bundle();
 
-        String rawCallerPkg = loginOptions.getString(AccountManager.KEY_ANDROID_PACKAGE_NAME);
+        String rawCallerPkg = finalLoginOptions.getString(AccountManager.KEY_ANDROID_PACKAGE_NAME);
         final String callerPkg = (rawCallerPkg != null && !rawCallerPkg.isEmpty()) ? rawCallerPkg : "com.android.vending";
 
-        loginOptions.putInt(AccountManager.KEY_CALLER_UID, Binder.getCallingUid());
-        loginOptions.putInt(AccountManager.KEY_CALLER_PID, Binder.getCallingPid());
+        finalLoginOptions.putInt(AccountManager.KEY_CALLER_UID, Binder.getCallingUid());
+        finalLoginOptions.putInt(AccountManager.KEY_CALLER_PID, Binder.getCallingPid());
 
         if (notifyOnAuthFailure) {
-            loginOptions.putBoolean(AccountManagerCompat.KEY_NOTIFY_ON_FAILURE, true);
+            finalLoginOptions.putBoolean(AccountManagerCompat.KEY_NOTIFY_ON_FAILURE, true);
         }
 
         // PRIORITY 1: Always check standard token database first (regardless of customTokens)
@@ -624,11 +622,11 @@ public class BAccountManagerService extends IBAccountManagerService.Stub impleme
                 false ) {
             @Override
             protected String toDebugString(long now) {
-                if (loginOptions != null) loginOptions.keySet();
+                if (finalLoginOptions != null) finalLoginOptions.keySet();
                 return super.toDebugString(now) + ", getAuthToken"
                         + ", " + account.toString()
                         + ", authTokenType " + authTokenType
-                        + ", loginOptions " + loginOptions
+                        + ", loginOptions " + finalLoginOptions
                         + ", notifyOnAuthFailure " + notifyOnAuthFailure;
             }
 
@@ -636,7 +634,7 @@ public class BAccountManagerService extends IBAccountManagerService.Stub impleme
             public void run() throws RemoteException {
                 
                 
-                mAuthenticator.getAuthToken(this, account, authTokenType, loginOptions);
+                mAuthenticator.getAuthToken(this, account, authTokenType, finalLoginOptions);
             }
 
             @Override
