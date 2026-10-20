@@ -104,43 +104,78 @@ public class BAccountManagerService extends IBAccountManagerService.Stub impleme
 
 
     /**
-     * Synchronise Google accounts from the host device's AccountManager into
-     * the virtual BUserAccounts for the given sandbox user, then optionally
-     * remove them from the host device so they only live inside the sandbox.
+     * Background watcher that polls the host AccountManager after a Google
+     * addAccount delegation.  When a brand-new Google account appears on the
+     * host (one whose name was NOT in {@code beforeNames}), the watcher:
+     *   1. imports it into the sandbox BUserAccounts,
+     *   2. sends LOGIN_ACCOUNTS_CHANGED_ACTION inside the sandbox so Play
+     *      Store / GMS pick it up immediately,
+     *   3. removes the account from the host device so it never lingers in
+     *      the phone's Settings → Accounts.
+     * Polls every 1.5 s for up to 5 minutes, then gives up.
      */
-    private void syncHostGoogleAccounts(int userId, boolean removeFromHost) {
-        try {
-            AccountManager hostAm = AccountManager.get(mContext);
-            Account[] hostAccounts = hostAm.getAccountsByType("com.google");
-            if (hostAccounts == null || hostAccounts.length == 0) return;
+    private void startHostAccountWatcher(final int userId, final java.util.Set<String> beforeNames) {
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                Slog.w(TAG, "HostAccountWatcher: started for userId=" + userId
+                        + ", existing host accounts=" + beforeNames);
+                AccountManager hostAm = AccountManager.get(mContext);
+                long deadline = SystemClock.elapsedRealtime() + 300_000; // 5 min
+                while (SystemClock.elapsedRealtime() < deadline) {
+                    try { Thread.sleep(1500); } catch (InterruptedException e) { break; }
+                    try {
+                        Account[] current = hostAm.getAccountsByType("com.google");
+                        if (current == null) continue;
+                        for (Account a : current) {
+                            if (beforeNames.contains(a.name)) continue;
 
-            BUserAccounts accounts = getUserAccounts(userId);
-            synchronized (accounts.lock) {
-                for (Account hostAcc : hostAccounts) {
-                    boolean exists = false;
-                    for (BAccount bAcc : accounts.accounts) {
-                        if (bAcc.account.equals(hostAcc)) {
-                            exists = true;
-                            break;
+                            Slog.w(TAG, "HostAccountWatcher: NEW account detected: " + a.name);
+
+                            // 1. Import into sandbox
+                            BUserAccounts accounts = getUserAccounts(userId);
+                            synchronized (accounts.lock) {
+                                boolean exists = false;
+                                for (BAccount b : accounts.accounts) {
+                                    if (b.account.equals(a)) { exists = true; break; }
+                                }
+                                if (!exists) {
+                                    Slog.w(TAG, "HostAccountWatcher: importing " + a.name
+                                            + " into sandbox userId=" + userId);
+                                    addAccountInternal(accounts, a, null, null, null);
+                                }
+                            }
+
+                            // 2. Broadcast LOGIN_ACCOUNTS_CHANGED inside sandbox
+                            try {
+                                Intent bc = new Intent(AccountManager.LOGIN_ACCOUNTS_CHANGED_ACTION);
+                                BlackBoxCore.getBActivityManager().sendBroadcast(bc, null, userId);
+                                Slog.w(TAG, "HostAccountWatcher: broadcast LOGIN_ACCOUNTS_CHANGED to sandbox user=" + userId);
+                            } catch (Throwable t) {
+                                Slog.w(TAG, "HostAccountWatcher: broadcast failed: " + t.getMessage());
+                            }
+
+                            // 3. Remove from host so it never shows in phone Settings
+                            try {
+                                Slog.w(TAG, "HostAccountWatcher: removing " + a.name + " from host");
+                                hostAm.removeAccountExplicitly(a);
+                                Slog.w(TAG, "HostAccountWatcher: removeAccountExplicitly OK for " + a.name);
+                            } catch (Throwable t) {
+                                Slog.w(TAG, "HostAccountWatcher: removeAccountExplicitly failed ("
+                                        + t.getMessage() + "), trying removeAccount fallback");
+                                try { hostAm.removeAccount(a, null, null); } catch (Throwable ignored) {}
+                            }
+
+                            Slog.w(TAG, "HostAccountWatcher: sync complete for " + a.name);
+                            return; // done
                         }
-                    }
-                    if (!exists) {
-                        Slog.w(TAG, "syncHostGoogleAccounts: importing " + hostAcc.name + " into userId=" + userId);
-                        addAccountInternal(accounts, hostAcc, null, null, null);
-                    }
-                    if (removeFromHost) {
-                        try {
-                            Slog.w(TAG, "syncHostGoogleAccounts: removing " + hostAcc.name + " from host device");
-                            hostAm.removeAccountExplicitly(hostAcc);
-                        } catch (Throwable t) {
-                            Slog.w(TAG, "syncHostGoogleAccounts: remove from host failed: " + t.getMessage());
-                        }
+                    } catch (Throwable t) {
+                        Slog.w(TAG, "HostAccountWatcher: poll error: " + t.getMessage());
                     }
                 }
+                Slog.w(TAG, "HostAccountWatcher: timed out after 5 min");
             }
-        } catch (Throwable t) {
-            Slog.w(TAG, "syncHostGoogleAccounts failed: " + t.getMessage());
-        }
+        }, "HostAccountWatcher").start();
     }
 
     @Override
@@ -256,7 +291,6 @@ public class BAccountManagerService extends IBAccountManagerService.Stub impleme
 
     @Override
     public Account[] getAccountsForPackage(String packageName, int uid, int userId) throws RemoteException {
-        syncHostGoogleAccounts(userId, true);
         BUserAccounts userAccounts = getUserAccounts(userId);
         List<Account> accounts = new ArrayList<>();
         synchronized (userAccounts.lock) {
@@ -272,9 +306,6 @@ public class BAccountManagerService extends IBAccountManagerService.Stub impleme
 
     @Override
     public Account[] getAccountsByTypeForPackage(String type, String packageName, int userId) throws RemoteException {
-        if (type == null || "com.google".equals(type)) {
-            syncHostGoogleAccounts(userId, true);
-        }
         BUserAccounts userAccounts = getUserAccounts(userId);
         List<Account> accounts = new ArrayList<>();
         synchronized (userAccounts.lock) {
@@ -292,9 +323,6 @@ public class BAccountManagerService extends IBAccountManagerService.Stub impleme
 
     @Override
     public Account[] getAccountsAsUser(String accountType, int userId) throws RemoteException {
-        if (accountType == null || "com.google".equals(accountType)) {
-            syncHostGoogleAccounts(userId, true);
-        }
         BUserAccounts userAccounts = getUserAccounts(userId);
         List<Account> accounts = new ArrayList<>();
         synchronized (userAccounts.lock) {
@@ -311,10 +339,6 @@ public class BAccountManagerService extends IBAccountManagerService.Stub impleme
     public void getAccountByTypeAndFeatures(IAccountManagerResponse response, String accountType, String[] features, int userId) throws RemoteException {
         if (response == null) throw new IllegalArgumentException("response is null");
         if (accountType == null) throw new IllegalArgumentException("accountType is null");
-
-        if ("com.google".equals(accountType)) {
-            syncHostGoogleAccounts(userId, true);
-        }
 
         String opPackageName = getCallingPackageName();
 
@@ -362,10 +386,6 @@ public class BAccountManagerService extends IBAccountManagerService.Stub impleme
     public void getAccountsByFeatures(IAccountManagerResponse response, String type, String[] features, int userId) throws RemoteException {
         if (response == null) throw new IllegalArgumentException("response is null");
         if (type == null) throw new IllegalArgumentException("accountType is null");
-
-        if ("com.google".equals(type)) {
-            syncHostGoogleAccounts(userId, true);
-        }
 
         String opPackageName = getCallingPackageName();
         
@@ -723,7 +743,17 @@ public class BAccountManagerService extends IBAccountManagerService.Stub impleme
         if ("com.google".equals(accountType)) {
             top.niunaijun.blackbox.utils.Slog.w(TAG, "addAccount: com.google detected, delegating to host AccountManager");
             try {
-                AccountManager hostAm = AccountManager.get(mContext);
+                final AccountManager hostAm = AccountManager.get(mContext);
+                final java.util.Set<String> beforeNames = new java.util.HashSet<>();
+                try {
+                    Account[] current = hostAm.getAccountsByType("com.google");
+                    if (current != null) {
+                        for (Account a : current) {
+                            beforeNames.add(a.name);
+                        }
+                    }
+                } catch (Throwable ignored) {}
+
                 hostAm.addAccount(accountType, authTokenType, requiredFeatures, options, null, new android.accounts.AccountManagerCallback<Bundle>() {
                     @Override
                     public void run(android.accounts.AccountManagerFuture<Bundle> future) {
@@ -738,6 +768,8 @@ public class BAccountManagerService extends IBAccountManagerService.Stub impleme
                                 }
                             }
                             response.onResult(bundle);
+                            // Start background polling to intercept the new Google account
+                            startHostAccountWatcher(userId, beforeNames);
                         } catch (Exception e) {
                             top.niunaijun.blackbox.utils.Slog.w(TAG, "addAccount host callback error: " + e.getMessage());
                             try {
@@ -983,7 +1015,6 @@ public class BAccountManagerService extends IBAccountManagerService.Stub impleme
     }
 
     public Account[] getAccounts(int userId, String opPackageName) {
-        syncHostGoogleAccounts(userId, true);
         BUserAccounts userAccounts = getUserAccounts(userId);
         List<Account> list = new ArrayList<>();
         synchronized (userAccounts.lock) {
