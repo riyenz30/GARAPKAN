@@ -8,32 +8,37 @@ import android.view.Menu
 import android.view.MenuItem
 import android.view.View
 import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.widget.PopupMenu
 import androidx.core.app.ActivityCompat
 import androidx.lifecycle.lifecycleScope
-import androidx.recyclerview.widget.GridLayoutManager
+import androidx.recyclerview.widget.LinearLayoutManager
 import com.dualspace.clone.R
 import com.dualspace.clone.data.CloneManager
 import com.dualspace.clone.data.CloneStore
 import com.dualspace.clone.data.GmsLinker
 import com.dualspace.clone.databinding.ActivityMainBinding
 import com.dualspace.clone.model.Clone
+import com.dualspace.clone.model.InstanceAppItem
+import com.dualspace.clone.model.VirtualSpace
 import com.dualspace.clone.util.BrandCompat
 import com.dualspace.clone.util.CrashLog
 import com.dualspace.clone.util.DsLog
 import com.dualspace.clone.util.FailureText
 import com.dualspace.clone.util.Prefs
 import com.dualspace.clone.util.StorageUtil
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.snackbar.Snackbar
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import top.niunaijun.blackbox.BlackBoxCore
 
-/** Home screen: grid of every clone, tap to launch, long-press to manage, FAB to add. */
+/** Home screen: vertical stack of instance cards (Instance 1, 2, 3...) like DualSpace. */
 class MainActivity : AppCompatActivity() {
 
     private lateinit var b: ActivityMainBinding
-    private lateinit var adapter: CloneAdapter
+    private lateinit var instanceAdapter: InstanceCardAdapter
     private var pendingLaunch: Clone? = null
     private var pendingAfterPermission: Clone? = null
 
@@ -49,14 +54,27 @@ class MainActivity : AppCompatActivity() {
         setContentView(b.root)
         setSupportActionBar(b.toolbar)
 
-        adapter = CloneAdapter(
-            onClick = { launchClone(it) },
-            onLongClick = { openDetail(it) }
+        instanceAdapter = InstanceCardAdapter(
+            onAppClick = { item ->
+                if (item.cloneRef != null) {
+                    launchClone(item.cloneRef)
+                } else {
+                    launchSystemGoogleApp(item.packageName, item.userId)
+                }
+            },
+            onAppLongClick = { item ->
+                if (item.cloneRef != null) {
+                    openDetail(item.cloneRef)
+                }
+            },
+            onSpaceMenuClick = { space, anchorView ->
+                showSpaceMenu(space, anchorView)
+            }
         )
-        val span = resources.getInteger(R.integer.grid_span)
-        b.grid.layoutManager = GridLayoutManager(this, span)
-        b.grid.adapter = adapter
-        b.grid.setHasFixedSize(true)
+
+        b.grid.layoutManager = LinearLayoutManager(this)
+        b.grid.adapter = instanceAdapter
+        b.grid.setHasFixedSize(false)
 
         b.fab.setOnClickListener {
             startActivityForResult(Intent(this, AppPickerActivity::class.java), REQ_PICK)
@@ -78,7 +96,6 @@ class MainActivity : AppCompatActivity() {
         nudgeAboutNewReports()
     }
 
-    /** A clone crashed or failed since Diagnostics was last opened: say so, with a shortcut to the log. */
     private fun nudgeAboutNewReports() {
         lifecycleScope.launch {
             val newest = withContext(Dispatchers.IO) { runCatching { CrashLog.newestReportTime(this@MainActivity) }.getOrDefault(0L) }
@@ -94,18 +111,107 @@ class MainActivity : AppCompatActivity() {
 
     private fun render(all: List<Clone>) {
         val visible = if (Prefs.showHidden) all else all.filter { !it.hidden }
-        adapter.submit(visible.sortedWith(compareBy({ it.packageName }, { it.index })))
-        b.empty.visibility = if (visible.isEmpty()) View.VISIBLE else View.GONE
-        b.grid.visibility = if (visible.isEmpty()) View.GONE else View.VISIBLE
-        b.subtitle.text = resources.getQuantityString(R.plurals.clone_count, all.size, all.size)
+
+        // Collect all distinct userIds that have clones
+        val userIds = visible.map { it.userId }.distinct().sorted().toMutableList()
+        // Always show at least Instance 1 even when empty
+        if (userIds.isEmpty()) userIds.add(0)
+
+        val spaces = userIds.map { uId ->
+            val spaceClones = visible.filter { it.userId == uId }
+            val appsList = mutableListOf<InstanceAppItem>()
+
+            // Always show these 3 Google packages in every instance card
+            appsList.add(InstanceAppItem("com.android.vending", "Google Play", uId, isSystemGoogle = true))
+            appsList.add(InstanceAppItem("com.google.android.gms", "Layanan Play", uId, isSystemGoogle = true))
+            appsList.add(InstanceAppItem("com.google.android.gsf", "Framework", uId, isSystemGoogle = true))
+
+            // Add user-cloned apps (skip if it's one of the Google packages above)
+            for (c in spaceClones) {
+                if (c.packageName != "com.android.vending" &&
+                    c.packageName != "com.google.android.gms" &&
+                    c.packageName != "com.google.android.gsf") {
+                    appsList.add(InstanceAppItem(c.packageName, c.label, uId, isSystemGoogle = false, cloneRef = c))
+                }
+            }
+
+            VirtualSpace(userId = uId, spaceNumber = uId + 1, apps = appsList)
+        }
+
+        instanceAdapter.submit(spaces)
+        b.empty.visibility = View.GONE
+        b.grid.visibility = View.VISIBLE
+        b.subtitle.text = "${spaces.size} Ruang Virtual"
         refreshStorage()
     }
 
-    /**
-     * Walking every sandbox to sum its size is real I/O work; doing it on every list change
-     * made the phone feel busy right while a clone was being created. Only redo it when the
-     * number of clones changed or the last figure is older than half a minute.
-     */
+    // ------------------------------------------------------------------ space menu
+
+    private fun showSpaceMenu(space: VirtualSpace, anchorView: View) {
+        val popup = PopupMenu(this, anchorView)
+        popup.menu.add(0, 1, 0, "Tambah App ke Instance ${space.spaceNumber}")
+        popup.menu.add(0, 2, 1, "Hapus Instance ${space.spaceNumber}")
+
+        popup.setOnMenuItemClickListener { item ->
+            when (item.itemId) {
+                1 -> {
+                    startActivityForResult(Intent(this, AppPickerActivity::class.java), REQ_PICK)
+                    true
+                }
+                2 -> {
+                    MaterialAlertDialogBuilder(this)
+                        .setTitle("Hapus Instance ${space.spaceNumber}?")
+                        .setMessage("Semua aplikasi dan data di Instance ${space.spaceNumber} akan dihapus permanen.")
+                        .setPositiveButton("Hapus") { _, _ -> deleteInstance(space.userId) }
+                        .setNegativeButton(android.R.string.cancel, null)
+                        .show()
+                    true
+                }
+                else -> false
+            }
+        }
+        popup.show()
+    }
+
+    private fun deleteInstance(userId: Int) {
+        lifecycleScope.launch {
+            b.progress.visibility = View.VISIBLE
+            withContext(Dispatchers.IO) {
+                val toDelete = CloneStore.all().filter { it.userId == userId }
+                for (c in toDelete) {
+                    CloneManager.delete(c)
+                }
+                runCatching {
+                    BlackBoxCore.get().uninstallGms(userId)
+                    BlackBoxCore.get().deleteUser(userId)
+                }
+            }
+            b.progress.visibility = View.GONE
+            Snackbar.make(b.root, "Instance ${userId + 1} telah dihapus", Snackbar.LENGTH_SHORT).show()
+        }
+    }
+
+    // ------------------------------------------------------------------ launching Google apps
+
+    private fun launchSystemGoogleApp(packageName: String, userId: Int) {
+        b.progress.visibility = View.VISIBLE
+        lifecycleScope.launch {
+            val ok = withContext(Dispatchers.IO) {
+                runCatching {
+                    GmsLinker.ensure(userId)
+                    BlackBoxCore.get().launchApk(packageName, userId)
+                }.getOrDefault(false)
+            }
+            b.progress.visibility = View.GONE
+            refreshGms(force = true)
+            if (!ok) {
+                Snackbar.make(b.root, "Gagal membuka aplikasi di Instance ${userId + 1}", Snackbar.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------ storage
+
     private fun refreshStorage() {
         val count = CloneStore.all().size
         val stale = SystemClock.elapsedRealtime() - storageCheckedAt > 30_000
@@ -119,6 +225,8 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    // ------------------------------------------------------------------ GMS status
+
     private fun refreshGms(force: Boolean) {
         val stale = SystemClock.elapsedRealtime() - gmsCheckedAt > 20_000
         if (!force && !stale && GmsLinker.lastStatus != null) return
@@ -130,7 +238,6 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun renderGms(s: GmsLinker.Status) {
-        adapter.refreshGmsDots()
         if (s.connected) {
             b.dotGms.setImageResource(R.drawable.dot_green)
             b.gmsStatus.text = getString(R.string.gms_status_connected)
@@ -144,7 +251,6 @@ class MainActivity : AppCompatActivity() {
             else -> getString(R.string.gms_reason_unlinked, s.unlinkedSlots.size)
         }
         b.gmsStatus.text = getString(R.string.gms_status_disconnected) + "\n" + reason
-        // Nothing to fix when the phone itself has no Play Services.
         b.btnGmsFix.visibility = if (s.hostHasGms && !repairing) View.VISIBLE else View.GONE
     }
 
@@ -166,7 +272,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // ------------------------------------------------------------------ launching
+    // ------------------------------------------------------------------ launching clones
 
     private fun launchClone(clone: Clone) {
         if (clone.frozen) {
@@ -184,11 +290,6 @@ class MainActivity : AppCompatActivity() {
         doLaunch(clone)
     }
 
-    /**
-     * Apps inside clones get location through Dual Space's permission. Ask for it once, here,
-     * before the first launch — otherwise every clone would show the system prompt itself
-     * and, because the grant lands on Dual Space, ask again and again.
-     */
     private fun doLaunch(clone: Clone) {
         if (!BrandCompat.hasLocationAccess(this) && !Prefs.locationAsked) {
             Prefs.locationAsked = true
@@ -223,7 +324,6 @@ class MainActivity : AppCompatActivity() {
                     }
                     .show()
             }
-            // The launch may have (re)linked GMS for this slot; repaint the dot.
             refreshGms(force = true)
         }
     }
@@ -231,6 +331,8 @@ class MainActivity : AppCompatActivity() {
     private fun openDetail(clone: Clone) {
         startActivity(Intent(this, CloneDetailActivity::class.java).putExtra(CloneDetailActivity.EXTRA_ID, clone.id))
     }
+
+    // ------------------------------------------------------------------ menu & activity result
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
@@ -252,8 +354,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // ------------------------------------------------------------------ menu
-
     override fun onCreateOptionsMenu(menu: Menu): Boolean {
         menuInflater.inflate(R.menu.menu_main, menu)
         return true
@@ -267,7 +367,6 @@ class MainActivity : AppCompatActivity() {
     override fun onOptionsItemSelected(item: MenuItem): Boolean = when (item.itemId) {
         R.id.action_show_hidden -> {
             if (!Prefs.showHidden && Prefs.hasPin()) {
-                // Revealing hidden clones always requires the PIN.
                 if (LockGate.requireUnlock(this, REQ_UNLOCK_HIDDEN, force = true)) toggleHidden()
             } else toggleHidden()
             true
