@@ -864,6 +864,15 @@ public class BActivityThread extends IBActivityThread.Stub {
                 || lower.contains("xposeddetect")
                 || lower.contains("magiskdetect");
     }
+
+    private static boolean isUnsafeHiltProvider(String className) {
+        // Providers known to crash inside virtual sandboxes because their
+        // Dagger/Hilt EntryPoint cast fails across process boundaries:
+        return className.contains("CachedPackageContentProvider")
+                || className.contains("SecurityHubContentProvider")
+                || className.contains("finsky.setup.p2p")
+                || className.contains("finsky.securityhub");
+    }
     
     
     private void setApplication(Application application) {
@@ -1031,6 +1040,16 @@ public class BActivityThread extends IBActivityThread.Stub {
                     // Skip known anti-virtual-environment detection providers.
                     if (providerInfo.name != null && isAntiDetectProvider(providerInfo.name)) {
                         Slog.w(TAG, "Skipping anti-detect ContentProvider: " + providerInfo.name);
+                        continue;
+                    }
+                    // Skip Play Store background-only providers that use Dagger/Hilt
+                    // EntryPoints.get() with process-specific component casts.
+                    // These providers (P2P setup, SecurityHub) are not needed in a
+                    // virtual sandbox and always crash with ClassCastException because
+                    // the Application class is loaded via createPackageContext which
+                    // doesn't preserve the Hilt component hierarchy across processes.
+                    if (providerInfo.name != null && isUnsafeHiltProvider(providerInfo.name)) {
+                        Slog.w(TAG, "Skipping Hilt-incompatible ContentProvider in sandbox: " + providerInfo.name);
                         continue;
                     }
                     if (processName.equals(providerInfo.processName) ||

@@ -42,64 +42,26 @@ public class NativeCore {
     @Keep
     public static int getCallingUid(int origCallingUid) {
         try {
-            
+            // System UIDs — never remap
             if (origCallingUid > 0 && origCallingUid < Process.FIRST_APPLICATION_UID)
                 return origCallingUid;
-            
             if (origCallingUid > Process.LAST_APPLICATION_UID)
                 return origCallingUid;
 
             if (origCallingUid == BlackBoxCore.getHostUid()) {
-                
-                String appPackageName = BlackBoxCore.getAppPackageName();
-                if (appPackageName != null && appPackageName.equals("com.google.android.gms")){
-                    
-                }
-                
-                
-                
-                if (appPackageName != null && appPackageName.equals("com.google.android.webview")){
-                    return Process.myUid();
-                }
-                
-                
-                try {
-                    int callingBUid = BlackBoxCore.getCallingBUid();
-                    if (callingBUid > 0 && callingBUid < Process.LAST_APPLICATION_UID) {
-                        return callingBUid;
-                    }
-                } catch (Exception e) {
-                    Log.w(TAG, "Error getting calling BUid: " + e.getMessage());
-                }
-                
-                
-                try {
-                    StackTraceElement[] stackTrace = Thread.currentThread().getStackTrace();
-                    for (StackTraceElement element : stackTrace) {
-                        String className = element.getClassName();
-                        String methodName = element.getMethodName();
-                        
-                        
-                        if ((className.contains("Settings") || className.contains("FeatureFlag")) &&
-                            (methodName.contains("getString") || methodName.contains("getInt") || 
-                             methodName.contains("getLong") || methodName.contains("getFloat"))) {
-                            
-                            Log.d(TAG, "System settings access detected, using system UID to prevent mismatch");
-                            
-                            return Process.SYSTEM_UID; 
-                        }
-                    }
-                } catch (Exception e) {
-                    Log.w(TAG, "Error analyzing stack trace for UID resolution: " + e.getMessage());
-                }
-                
-                
+                // The real Linux UID of this process is the host UID.
+                // Always return the host UID so that Android's
+                // AttributionSource.enforceCallingUid() sees a consistent
+                // Binder.getCallingUid() == AttributionSource.uid == hostUid.
+                // Returning the virtual callingBUid here caused:
+                //   SecurityException: Calling uid: 10003 doesn't match source uid: 10261
+                // on every ContentProvider query/call to system providers (Settings,
+                // Gservices, Phenotype), making Play Store unable to load any config.
                 return BlackBoxCore.getHostUid();
             }
             return origCallingUid;
         } catch (Exception e) {
             Log.e(TAG, "Error in getCallingUid: " + e.getMessage());
-            
             return Process.myUid();
         }
     }
