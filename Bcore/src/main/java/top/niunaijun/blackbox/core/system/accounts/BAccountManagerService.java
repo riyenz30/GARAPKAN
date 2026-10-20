@@ -1765,30 +1765,30 @@ public class BAccountManagerService extends IBAccountManagerService.Stub impleme
                         top.niunaijun.blackbox.core.system.am.BActivityManagerService.get();
                 if (ams != null) {
                     Intent proxyIntent = ams.bindService(intent, null, null, mAccounts.userId);
-                    if (proxyIntent != null && proxyIntent.getComponent() != null) {
+                    top.niunaijun.blackbox.utils.Slog.d(TAG, "bindToAuthenticator: ams.bindService returned: " + proxyIntent);
+                    if (proxyIntent != null && proxyIntent.getComponent() != null &&
+                            proxyIntent.getComponent().getPackageName().equals(mContext.getPackageName())) {
+                        top.niunaijun.blackbox.utils.Slog.d(TAG, "bindToAuthenticator: binding to proxy service " + proxyIntent.getComponent());
                         if (!mContext.bindService(proxyIntent, this, flags)) {
-                            if (Log.isLoggable(TAG, Log.VERBOSE)) {
-                                Log.v(TAG, "bindService (proxy) to " + componentName + " failed");
-                            }
+                            top.niunaijun.blackbox.utils.Slog.w(TAG, "bindService (proxy) to " + componentName + " failed");
                             return false;
                         }
                         return true;
                     }
                 }
             } catch (Throwable t) {
-                Log.w(TAG, "bindToAuthenticator virtual proxy failed", t);
+                top.niunaijun.blackbox.utils.Slog.w(TAG, "bindToAuthenticator virtual proxy failed", t);
             }
 
             try {
+                top.niunaijun.blackbox.utils.Slog.d(TAG, "bindToAuthenticator: fallback to direct host bind for " + componentName);
                 if (!mContext.bindService(intent, this, flags)) {
-                    if (Log.isLoggable(TAG, Log.VERBOSE)) {
-                        Log.v(TAG, "bindService to " + componentName + " failed");
-                    }
+                    top.niunaijun.blackbox.utils.Slog.w(TAG, "bindService to " + componentName + " failed");
                     return false;
                 }
                 return true;
             } catch (SecurityException e) {
-                Log.w(TAG, "bindToAuthenticator: SecurityException binding to " + componentName + ", " + e.getMessage());
+                top.niunaijun.blackbox.utils.Slog.w(TAG, "bindToAuthenticator: SecurityException binding to " + componentName + ", " + e.getMessage());
                 return false;
             }
         }

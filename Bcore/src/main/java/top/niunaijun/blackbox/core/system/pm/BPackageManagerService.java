@@ -325,6 +325,17 @@ public class BPackageManagerService extends IBPackageManagerService.Stub impleme
                 return PackageManagerCompat.generateServiceInfo(
                         s, flags, ps.readUserState(userId), userId);
             }
+            // Fallback: if the component belongs to a package we installed (e.g. GMS mirrored
+            // from host) but the service was not registered in mComponentResolver (manifest
+            // parsing may skip some services), resolve it from the host PackageManager.
+            BPackageSettings ps = mPackages.get(component.getPackageName());
+            if (ps != null) {
+                try {
+                    return BlackBoxCore.getContext().getPackageManager()
+                            .getServiceInfo(component, PackageManager.GET_META_DATA);
+                } catch (PackageManager.NameNotFoundException ignored) {
+                }
+            }
         }
         return null;
     }

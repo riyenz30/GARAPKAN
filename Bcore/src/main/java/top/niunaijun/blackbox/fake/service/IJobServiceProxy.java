@@ -44,25 +44,38 @@ public class IJobServiceProxy extends BinderInvocationStub {
                     Slog.w(TAG, "Schedule: No arguments provided, returning RESULT_SUCCESS");
                     return 1; // JobScheduler.RESULT_SUCCESS
                 }
-                
-                if (args[0] == null) {
-                    Slog.w(TAG, "Schedule: args[0] is null (method=" + method.getName() + ", args.len=" + args.length + "), returning RESULT_SUCCESS to prevent app crash");
-                    return 1; // Return RESULT_SUCCESS instead of RESULT_FAILURE so apps don't abort
+
+                // Find the JobInfo argument — it may not be args[0].
+                // On Android 14+ (API 34+), IJobScheduler.schedule can be called as
+                // schedule(String namespace, JobInfo job) where args[0] is a null namespace.
+                JobInfo jobInfo = null;
+                int jobInfoIndex = -1;
+                for (int i = 0; i < args.length; i++) {
+                    if (args[i] instanceof JobInfo) {
+                        jobInfo = (JobInfo) args[i];
+                        jobInfoIndex = i;
+                        break;
+                    }
                 }
-                
-                if (!(args[0] instanceof JobInfo)) {
-                    Slog.w(TAG, "Schedule: args[0] is not JobInfo: " + args[0].getClass().getName());
-                    return handleNonJobInfoSchedule(who, method, args);
+
+                if (jobInfo == null) {
+                    // No JobInfo found in any argument position — pass through to system
+                    Slog.w(TAG, "Schedule: No JobInfo found in args (len=" + args.length + "), forwarding to system");
+                    try {
+                        return method.invoke(who, args);
+                    } catch (Exception e) {
+                        Slog.w(TAG, "Schedule: System fallback failed, returning RESULT_SUCCESS");
+                        return 1;
+                    }
                 }
-                
-                JobInfo jobInfo = (JobInfo) args[0];
-                Slog.d(TAG, "Schedule: Processing JobInfo for package: " + jobInfo.getService().getPackageName());
+
+                Slog.d(TAG, "Schedule: Processing JobInfo at args[" + jobInfoIndex + "] for package: " + jobInfo.getService().getPackageName());
                 
                 
                 try {
                     JobInfo proxyJobInfo = BlackBoxCore.getBJobManager().schedule(jobInfo);
                     if (proxyJobInfo != null) {
-                        args[0] = proxyJobInfo;
+                        args[jobInfoIndex] = proxyJobInfo;
                         Slog.d(TAG, "Schedule: Successfully created proxy JobInfo");
                         return method.invoke(who, args);
                     }
