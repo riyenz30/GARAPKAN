@@ -154,9 +154,21 @@ public class IActivityManagerProxy extends ClassInvocationStub {
                         || auth.equals("com.google.android.gms.chimera")
                         || auth.equals("com.huawei.android.launcher.settings")
                         || auth.equals("com.hihonor.android.launcher.settings")) {
-                    content = method.invoke(who, args);
-                    ContentProviderDelegate.update(content, (String) auth);
-                    return content;
+                    try {
+                        content = method.invoke(who, args);
+                        ContentProviderDelegate.update(content, (String) auth);
+                        return content;
+                    } catch (java.lang.reflect.InvocationTargetException e) {
+                        Throwable cause = e.getCause();
+                        if (cause instanceof SecurityException) {
+                            // Android 16+: GMS internal providers (AppDoctorProvider,
+                            // SecurityHubContentProvider) deny access to sandboxed processes.
+                            // Return null so the caller falls back gracefully instead of crashing.
+                            Slog.w(TAG, "SecurityException accessing provider '" + auth + "': " + cause.getMessage());
+                            return null;
+                        }
+                        throw e;
+                    }
                 } else {
                     
 

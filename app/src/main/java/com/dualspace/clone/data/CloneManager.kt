@@ -68,8 +68,8 @@ object CloneManager {
         val list = pm.getInstalledApplications(0)
             .asSequence()
             .filter { it.packageName != self && !it.packageName.startsWith("com.dualspace.clone") }
-            .filter { it.packageName in launchable }
-            .filter { includeSystem || (it.flags and ApplicationInfo.FLAG_SYSTEM) == 0 }
+            .filter { it.packageName in launchable || it.packageName == "com.android.vending" }
+            .filter { includeSystem || (it.flags and ApplicationInfo.FLAG_SYSTEM) == 0 || it.packageName == "com.android.vending" }
             .map {
                 InstalledApp(
                     packageName = it.packageName,
