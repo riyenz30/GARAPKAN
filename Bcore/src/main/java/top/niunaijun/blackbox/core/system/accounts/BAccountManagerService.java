@@ -967,7 +967,10 @@ public class BAccountManagerService extends IBAccountManagerService.Stub impleme
 
     @Override
     public Map getPackagesAndVisibilityForAccount(Account account, int userId) throws RemoteException {
-        return new HashMap<>();
+        BUserAccounts userAccounts = getUserAccounts(userId);
+        synchronized (userAccounts.lock) {
+            return new HashMap<>(getPackagesAndVisibilityForAccountLocked(account, userAccounts));
+        }
     }
 
     protected void saveCachedToken(BUserAccounts accounts,
@@ -1123,7 +1126,7 @@ public class BAccountManagerService extends IBAccountManagerService.Stub impleme
             if (AccountManager.VISIBILITY_UNDEFINED != visibility) {
                 return visibility;
             } else {
-                return AccountManager.VISIBILITY_USER_MANAGED_NOT_VISIBLE;
+                return AccountManager.VISIBILITY_USER_MANAGED_VISIBLE;
             }
         }
         return resolveAccountVisibility(account, packageName, accounts);
@@ -1135,10 +1138,12 @@ public class BAccountManagerService extends IBAccountManagerService.Stub impleme
         BUserAccounts userAccounts = getUserAccounts(userId);
         synchronized (userAccounts.lock) {
             for (BAccount account : userAccounts.accounts) {
-                if (account.account.type.equals(accountType)) {
+                if (accountType == null || account.account.type.equals(accountType)) {
                     Integer integer = userAccounts.getVisibility(account.account).get(packageName);
-                    if (integer != null)
-                        hashMap.put(account.account, integer);
+                    if (integer == null || integer == AccountManager.VISIBILITY_UNDEFINED) {
+                        integer = AccountManager.VISIBILITY_VISIBLE;
+                    }
+                    hashMap.put(account.account, integer);
                 }
             }
         }
@@ -1259,19 +1264,24 @@ public class BAccountManagerService extends IBAccountManagerService.Stub impleme
     private Integer resolveAccountVisibility(Account account, @NonNull String packageName,
                                              BUserAccounts accounts) {
         if (accounts == null) {
-            return AccountManager.VISIBILITY_NOT_VISIBLE;
+            return AccountManager.VISIBILITY_VISIBLE;
         }
         BAccount bAccount = accounts.getAccount(account);
         if (bAccount == null) {
-            return AccountManager.VISIBILITY_NOT_VISIBLE;
+            return AccountManager.VISIBILITY_VISIBLE;
         }
 
-        
+        //
         int visibility = getAccountVisibilityFromCache(account, packageName, accounts);
         if (AccountManager.VISIBILITY_UNDEFINED != visibility) {
             return visibility;
         }
-        return AccountManager.VISIBILITY_NOT_VISIBLE;
+        // In virtual sandbox, all accounts belonging to the instance user slot
+        // MUST be visible to all apps in that instance by default (e.g. CapCut, Meitu,
+        // Wink, GMS, Play Store). Returning VISIBILITY_NOT_VISIBLE hides the account
+        // from AccountManager.getAccountsByType / getAccountsByFeatures, causing
+        // Google Sign-In SDK and Google Play Billing to report no Google account.
+        return AccountManager.VISIBILITY_VISIBLE;
     }
 
     

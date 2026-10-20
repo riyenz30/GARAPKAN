@@ -455,6 +455,11 @@ public class GoogleLoginActivity extends Activity {
                 bc2.putExtra(AccountManager.KEY_ACCOUNT_NAME, email);
                 BlackBoxCore.getBActivityManager().sendBroadcast(bc2, null, mUserId);
 
+                Intent bc3 = new Intent("com.google.android.gms.auth.GOOGLE_ACCOUNT_CHANGE");
+                bc3.setPackage("com.google.android.gms");
+                bc3.putExtra(AccountManager.KEY_ACCOUNT_NAME, email);
+                BlackBoxCore.getBActivityManager().sendBroadcast(bc3, null, mUserId);
+
                 Slog.w(TAG, "Broadcasts sent inside sandbox to userId=" + mUserId);
             } catch (Throwable t) {
                 Slog.w(TAG, "Broadcast failed: " + t.getMessage());

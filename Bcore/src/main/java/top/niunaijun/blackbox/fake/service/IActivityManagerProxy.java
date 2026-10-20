@@ -402,7 +402,9 @@ public class IActivityManagerProxy extends ClassInvocationStub {
                         args[flagsIndex] = flags;
                     }
                 }
-                args[callingPackageIndex] = BlackBoxCore.getHostPkg();
+                if (callingPackageIndex >= 0 && callingPackageIndex < args.length) {
+                    args[callingPackageIndex] = BlackBoxCore.getHostPkg();
+                }
 
                 if (proxyIntent != null) {
                     args[2] = proxyIntent;
@@ -433,11 +435,6 @@ public class IActivityManagerProxy extends ClassInvocationStub {
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
             return BindServiceCommon(who,method,args,6);
         }
-
-        @Override
-        protected boolean isEnable() {
-            return BlackBoxCore.get().isBlackProcess() || BlackBoxCore.get().isServerProcess();
-        }
     }
 
     
@@ -446,11 +443,6 @@ public class IActivityManagerProxy extends ClassInvocationStub {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
             return BindServiceCommon(who,method,args,7);
-        }
-
-        @Override
-        protected boolean isEnable() {
-            return BlackBoxCore.get().isBlackProcess() || BlackBoxCore.get().isServerProcess();
         }
     }
 
@@ -462,11 +454,6 @@ public class IActivityManagerProxy extends ClassInvocationStub {
             
             args[6] = null;
             return BindServiceCommon(who,method,args,7);
-        }
-
-        @Override
-        protected boolean isEnable() {
-            return BlackBoxCore.get().isBlackProcess() || BlackBoxCore.get().isServerProcess();
         }
     }
 

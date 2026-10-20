@@ -30,20 +30,15 @@ public class BStorageManagerService extends IBStorageManagerService.Stub impleme
 
     @Override
     public StorageVolume[] getVolumeList(int uid, String packageName, int flags, int userId) throws RemoteException {
-        if (BRStorageManager.get().getVolumeList(0, 0) == null) {
-            return null;
-        }
+        // Return host volumes WITHOUT mutating mPath/mInternalPath.
+        // Overwriting mPath to the sandbox internal dir breaks
+        // Environment.isExternalStorageEmulated("/storage/emulated/0") on Android 11+
+        // because no volume matches that path anymore, causing
+        // IllegalArgumentException in Play Store download and CapCut PathUtils.
+        // File isolation is handled by native IO redirect (libblackbox.so),
+        // not by StorageVolume path mutation.
         try {
-            StorageVolume[] storageVolumes = BRStorageManager.get().getVolumeList(BUserHandle.getUserId(Process.myUid()), 0);
-            if (storageVolumes == null)
-                return null;
-            for (StorageVolume storageVolume : storageVolumes) {
-                BRStorageVolume.get(storageVolume)._set_mPath(BEnvironment.getExternalUserDir(userId));
-                if (BuildCompat.isPie()) {
-                    BRStorageVolume.get(storageVolume)._set_mInternalPath(BEnvironment.getExternalUserDir(userId));
-                }
-            }
-            return storageVolumes;
+            return BRStorageManager.get().getVolumeList(BUserHandle.getUserId(Process.myUid()), 0);
         } catch (Exception e) {
             e.printStackTrace();
         }
