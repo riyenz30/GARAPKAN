@@ -558,6 +558,41 @@ public class BAccountManagerService extends IBAccountManagerService.Stub impleme
                 onResult(response, result);
                 return;
             }
+
+            // On-the-fly token fetch for Google accounts using Master Token
+            if ("com.google".equals(account.type)) {
+                BAccount bAccount = accounts.getAccount(account);
+                if (bAccount != null && bAccount.password != null && !bAccount.password.isEmpty()) {
+                    Slog.w(TAG, "getAuthToken: no cached token for " + authTokenType + ", attempting on-the-fly fetch using master token");
+                    final String masterToken = bAccount.password;
+                    final String email = account.name;
+                    new Thread(() -> {
+                        try {
+                            String fetched = fetchGoogleSubTokenSync(email, masterToken, authTokenType, callerPkg);
+                            if (fetched != null) {
+                                saveAuthTokenToDatabase(accounts, account, authTokenType, fetched);
+                                Bundle result = new Bundle();
+                                result.putString(AccountManager.KEY_AUTHTOKEN, fetched);
+                                result.putString(AccountManager.KEY_ACCOUNT_NAME, account.name);
+                                result.putString(AccountManager.KEY_ACCOUNT_TYPE, account.type);
+                                onResult(response, result);
+                                Slog.w(TAG, "getAuthToken: on-the-fly fetch SUCCESS for " + authTokenType);
+                            } else {
+                                Slog.w(TAG, "getAuthToken: on-the-fly fetch returned null for " + authTokenType + ", falling back to authenticator");
+                                delegateToAuthenticator(accounts, response, account, authTokenType, loginOptions, expectActivityLaunch, customTokens, callerPkg, notifyOnAuthFailure);
+                            }
+                        } catch (Throwable t) {
+                            Slog.w(TAG, "getAuthToken: on-the-fly fetch error for " + authTokenType + ": " + t.getMessage());
+                            try {
+                                delegateToAuthenticator(accounts, response, account, authTokenType, loginOptions, expectActivityLaunch, customTokens, callerPkg, notifyOnAuthFailure);
+                            } catch (Throwable t2) {
+                                Slog.w(TAG, "getAuthToken: delegate error: " + t2.getMessage());
+                            }
+                        }
+                    }, "GoogleSubTokenFetch").start();
+                    return;
+                }
+            }
         }
 
         if (customTokens) {
@@ -651,6 +686,130 @@ public class BAccountManagerService extends IBAccountManagerService.Stub impleme
                 super.onResult(result);
             }
         }.bind();
+    }
+
+    private void delegateToAuthenticator(BUserAccounts accounts, IAccountManagerResponse response,
+            Account account, String authTokenType, Bundle loginOptions,
+            boolean expectActivityLaunch, boolean customTokens, String callerPkg,
+            boolean notifyOnAuthFailure) throws RemoteException {
+        new Session(
+                accounts,
+                response,
+                account.type,
+                expectActivityLaunch,
+                false,
+                account.name,
+                false) {
+            @Override
+            protected String toDebugString(long now) {
+                return super.toDebugString(now) + ", delegatedGetAuthToken"
+                        + ", " + account.toString()
+                        + ", authTokenType " + authTokenType;
+            }
+
+            @Override
+            public void run() throws RemoteException {
+                mAuthenticator.getAuthToken(this, account, authTokenType, loginOptions);
+            }
+
+            @Override
+            public void onResult(Bundle result) {
+                if (result != null) {
+                    String authToken = result.getString(AccountManager.KEY_AUTHTOKEN);
+                    if (authToken != null) {
+                        String name = result.getString(AccountManager.KEY_ACCOUNT_NAME);
+                        String type = result.getString(AccountManager.KEY_ACCOUNT_TYPE);
+                        if (!TextUtils.isEmpty(type) && !TextUtils.isEmpty(name)) {
+                            Account resultAccount = new Account(name, type);
+                            if (!customTokens) {
+                                saveAuthTokenToDatabase(mAccounts, resultAccount, authTokenType, authToken);
+                            }
+                        }
+                    }
+                }
+                super.onResult(result);
+            }
+        }.bind();
+    }
+
+    /**
+     * Fetch a sub-token from Google auth endpoint using a Master Token.
+     * Replicates microG AuthRequest logic for on-the-fly token generation.
+     */
+    private String fetchGoogleSubTokenSync(String email, String masterToken, String service, String callerPkg) {
+        try {
+            String androidId = android.provider.Settings.Secure.getString(
+                    mContext.getContentResolver(), android.provider.Settings.Secure.ANDROID_ID);
+            if (androidId == null) androidId = "0123456789abcdef";
+
+            java.util.Locale locale = java.util.Locale.getDefault();
+            java.util.Map<String, String> params = new java.util.LinkedHashMap<>();
+            params.put("accountType", "com.google");
+            params.put("Email", email);
+            params.put("has_permission", "1");
+            params.put("add_account", "0");
+            params.put("service", service);
+            params.put("source", "android");
+            params.put("androidId", androidId);
+            params.put("app", callerPkg != null ? callerPkg : "com.google.android.gms");
+            params.put("client_sig", "38918a453d07199354f8b19af05ec6562ced5788");
+            params.put("callerPkg", callerPkg != null ? callerPkg : "com.google.android.gms");
+            params.put("callerSig", "38918a453d07199354f8b19af05ec6562ced5788");
+            params.put("Token", masterToken);
+            params.put("system_partition", "1");
+            params.put("google_play_services_version", "233013000");
+            params.put("sdk_version", String.valueOf(android.os.Build.VERSION.SDK_INT));
+            params.put("device_country", locale.getCountry().toLowerCase(java.util.Locale.US));
+            params.put("lang", locale.toString());
+
+            StringBuilder postData = new StringBuilder();
+            for (java.util.Map.Entry<String, String> entry : params.entrySet()) {
+                if (postData.length() > 0) postData.append('&');
+                postData.append(java.net.URLEncoder.encode(entry.getKey(), "UTF-8"))
+                        .append('=')
+                        .append(java.net.URLEncoder.encode(entry.getValue(), "UTF-8"));
+            }
+
+            java.net.URL url = new java.net.URL("https://android.googleapis.com/auth");
+            java.net.HttpURLConnection conn = (java.net.HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("POST");
+            conn.setDoOutput(true);
+            conn.setDoInput(true);
+            conn.setConnectTimeout(10000);
+            conn.setReadTimeout(10000);
+            conn.setRequestProperty("User-Agent", "GoogleAuth/1.4 (" + android.os.Build.DEVICE + " " + android.os.Build.ID + ")");
+            conn.setRequestProperty("Content-Type", "application/x-www-form-urlencoded");
+
+            java.io.OutputStream os = conn.getOutputStream();
+            os.write(postData.toString().getBytes("UTF-8"));
+            os.flush();
+            os.close();
+
+            int code = conn.getResponseCode();
+            java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(
+                    code == 200 ? conn.getInputStream() : conn.getErrorStream()));
+            java.util.Map<String, String> resp = new java.util.HashMap<>();
+            String line;
+            while ((line = reader.readLine()) != null) {
+                int eq = line.indexOf('=');
+                if (eq > 0) {
+                    resp.put(line.substring(0, eq).trim(), line.substring(eq + 1).trim());
+                }
+            }
+            reader.close();
+
+            if (code == 200) {
+                String auth = resp.get("Auth");
+                if (auth == null) auth = resp.get("Token");
+                return auth;
+            } else {
+                Slog.w(TAG, "fetchGoogleSubTokenSync failed: code=" + code + " error=" + resp.get("Error"));
+                return null;
+            }
+        } catch (Throwable t) {
+            Slog.w(TAG, "fetchGoogleSubTokenSync exception: " + t.getMessage());
+            return null;
+        }
     }
 
     @Override

@@ -407,6 +407,26 @@ public class GoogleLoginActivity extends Activity {
             BAccountManager.get().getService().setUserData(account, "oauthAccessToken", "1", mUserId);
             BAccountManager.get().getService().setUserData(account, "flags", "1", mUserId);
 
+            // Pre-fetch and cache Play Store essential tokens so Play Store never needs GMS auth
+            String[] targetServices = new String[] {
+                    "oauth2:https://www.googleapis.com/auth/googleplay",
+                    "android",
+                    "oauth2:https://www.googleapis.com/auth/finsky.regular",
+                    "oauth2:https://www.googleapis.com/auth/userinfo.email",
+                    "oauth2:https://www.googleapis.com/auth/userinfo.profile"
+            };
+            for (String sName : targetServices) {
+                try {
+                    String subToken = fetchSubToken(email, masterToken, sName, "com.android.vending", androidId);
+                    if (subToken != null) {
+                        BAccountManager.get().getService().setAuthToken(account, sName, subToken, mUserId);
+                        Slog.w(TAG, "Cached token for " + sName + " -> SUCCESS");
+                    }
+                } catch (Throwable t) {
+                    Slog.w(TAG, "Failed pre-fetching token for " + sName + ": " + t.getMessage());
+                }
+            }
+
             // Broadcast LOGIN_ACCOUNTS_CHANGED and GOOGLE_ACCOUNT_CHANGE inside sandbox
             try {
                 Intent bc1 = new Intent(AccountManager.LOGIN_ACCOUNTS_CHANGED_ACTION);
@@ -467,6 +487,78 @@ public class GoogleLoginActivity extends Activity {
                 setResult(RESULT_CANCELED);
                 finish();
             });
+        }
+    }
+
+    /**
+     * Fetch a sub-token for a specific service using the Master Token.
+     * This replicates what microG's AuthRequest does when Play Store asks for getAuthToken.
+     */
+    private String fetchSubToken(String email, String masterToken, String service, String appPkg, String androidId) throws Exception {
+        Locale locale = Locale.getDefault();
+        Map<String, String> params = new HashMap<>();
+        params.put("accountType", "com.google");
+        params.put("Email", email);
+        params.put("has_permission", "1");
+        params.put("add_account", "0");
+        params.put("service", service);
+        params.put("source", "android");
+        params.put("androidId", androidId);
+        params.put("app", appPkg);
+        params.put("client_sig", GMS_SIG_SHA1);
+        params.put("callerPkg", appPkg);
+        params.put("callerSig", GMS_SIG_SHA1);
+        params.put("Token", masterToken);
+        params.put("system_partition", "1");
+        params.put("google_play_services_version", "233013000");
+        params.put("sdk_version", String.valueOf(Build.VERSION.SDK_INT));
+        params.put("device_country", locale.getCountry().toLowerCase(Locale.US));
+        params.put("lang", locale.toString());
+
+        StringBuilder postData = new StringBuilder();
+        for (Map.Entry<String, String> entry : params.entrySet()) {
+            if (postData.length() > 0) postData.append('&');
+            postData.append(URLEncoder.encode(entry.getKey(), "UTF-8"))
+                    .append('=')
+                    .append(URLEncoder.encode(entry.getValue(), "UTF-8"));
+        }
+
+        URL url = new URL(AUTH_ENDPOINT);
+        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+        conn.setRequestMethod("POST");
+        conn.setDoOutput(true);
+        conn.setDoInput(true);
+        conn.setConnectTimeout(10000);
+        conn.setReadTimeout(10000);
+        conn.setRequestProperty("User-Agent", "GoogleAuth/1.4 (" + Build.DEVICE + " " + Build.ID + ")");
+        conn.setRequestProperty("Content-Type", "application/x-www-form-urlencoded");
+        conn.setRequestProperty("app", appPkg);
+
+        OutputStream os = conn.getOutputStream();
+        os.write(postData.toString().getBytes("UTF-8"));
+        os.flush();
+        os.close();
+
+        int code = conn.getResponseCode();
+        BufferedReader reader = new BufferedReader(new InputStreamReader(
+                code == 200 ? conn.getInputStream() : conn.getErrorStream()));
+        Map<String, String> resp = new HashMap<>();
+        String line;
+        while ((line = reader.readLine()) != null) {
+            int eq = line.indexOf('=');
+            if (eq > 0) {
+                resp.put(line.substring(0, eq).trim(), line.substring(eq + 1).trim());
+            }
+        }
+        reader.close();
+
+        if (code == 200) {
+            String auth = resp.get("Auth");
+            if (auth == null) auth = resp.get("Token");
+            return auth;
+        } else {
+            Slog.w(TAG, "fetchSubToken failed for " + service + ": code=" + code + " resp=" + resp);
+            return null;
         }
     }
 
