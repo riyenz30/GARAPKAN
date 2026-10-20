@@ -125,9 +125,19 @@ public class GoogleLoginActivity extends Activity {
         settings.setUseWideViewPort(false);
         settings.setSupportZoom(false);
         settings.setJavaScriptCanOpenWindowsAutomatically(false);
+        settings.setDomStorageEnabled(true);
         settings.setUserAgentString(settings.getUserAgentString() + MAGIC_USER_AGENT);
 
         mWebView.addJavascriptInterface(new JsBridge(), "mm");
+
+        // WebChromeClient needed for JS dialogs and console logging
+        mWebView.setWebChromeClient(new android.webkit.WebChromeClient() {
+            @Override
+            public boolean onConsoleMessage(android.webkit.ConsoleMessage msg) {
+                Slog.w(TAG, "WebView console [" + msg.messageLevel() + "]: " + msg.message());
+                return true;
+            }
+        });
 
         mWebView.setWebViewClient(new WebViewClient() {
             @Override
@@ -201,7 +211,40 @@ public class GoogleLoginActivity extends Activity {
         public int getBuildVersionSdk() { return Build.VERSION.SDK_INT; }
 
         @JavascriptInterface
-        public void getDroidGuardResult(String s) {}
+        public void getDroidGuardResult(String s) {
+            Slog.w(TAG, "JSBridge: getDroidGuardResult called with challenge: " + s);
+            try {
+                org.json.JSONArray array = new org.json.JSONArray(s);
+                StringBuilder sb = new StringBuilder();
+                sb.append(getAndroidId()).append(":").append(getBuildVersionSdk()).append(":").append(getPlayServicesVersionCode());
+                for (int i = 0; i < array.length(); i++) {
+                    sb.append(":").append(array.getString(i));
+                }
+                java.security.MessageDigest md = java.security.MessageDigest.getInstance("SHA-1");
+                byte[] digest = md.digest(sb.toString().getBytes("UTF-8"));
+                String dg = android.util.Base64.encodeToString(digest, android.util.Base64.NO_WRAP);
+
+                mMainHandler.post(() -> {
+                    String script = "if (window.setDgResult) { window.setDgResult('" + dg + "'); }";
+                    if (Build.VERSION.SDK_INT >= 19) {
+                        mWebView.evaluateJavascript(script, null);
+                    } else {
+                        mWebView.loadUrl("javascript:" + script);
+                    }
+                    Slog.w(TAG, "JSBridge: injected setDgResult callback");
+                });
+            } catch (Throwable t) {
+                Slog.w(TAG, "JSBridge: getDroidGuardResult error: " + t.getMessage());
+                mMainHandler.post(() -> {
+                    String script = "if (window.setDgResult) { window.setDgResult(''); }";
+                    if (Build.VERSION.SDK_INT >= 19) {
+                        mWebView.evaluateJavascript(script, null);
+                    } else {
+                        mWebView.loadUrl("javascript:" + script);
+                    }
+                });
+            }
+        }
 
         @JavascriptInterface
         public void skipLogin() {
