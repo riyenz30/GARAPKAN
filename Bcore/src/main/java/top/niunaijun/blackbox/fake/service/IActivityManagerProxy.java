@@ -145,42 +145,10 @@ public class IActivityManagerProxy extends ClassInvocationStub {
                     args[1] = BlackBoxCore.getHostPkg();
                 }
 
-                if (auth.equals("settings")
-                        || auth.equals("media")
-                        || auth.equals("telephony")
-                        || ((String) auth).contains("com.google.android.gms")
-                        || ((String) auth).contains("com.android.vending")
-                        || ((String) auth).contains("com.google.android.gsf")
-                        || auth.equals("com.google.android.gms.chimera")
-                        || auth.equals("com.huawei.android.launcher.settings")
-                        || auth.equals("com.hihonor.android.launcher.settings")) {
-                    try {
-                        content = method.invoke(who, args);
-                        ContentProviderDelegate.update(content, (String) auth);
-                        return content;
-                    } catch (java.lang.reflect.InvocationTargetException e) {
-                        Throwable cause = e.getCause();
-                        if (cause instanceof SecurityException) {
-                            // Android 16+: GMS internal providers (AppDoctorProvider,
-                            // SecurityHubContentProvider) deny access to sandboxed processes.
-                            // Return null so the caller falls back gracefully instead of crashing.
-                            Slog.w(TAG, "SecurityException accessing provider '" + auth + "': " + cause.getMessage());
-                            return null;
-                        }
-                        throw e;
-                    }
-                } else {
-                    
-
-                    ProviderInfo providerInfo = BlackBoxCore.getBPackageManager()
-                            .resolveContentProvider(
-                                    (String) auth, GET_META_DATA, BActivityThread.getUserId());
-                    if (providerInfo == null) {
-                        
-                        return null;
-                    }
-
-                    
+                ProviderInfo providerInfo = BlackBoxCore.getBPackageManager()
+                        .resolveContentProvider(
+                                (String) auth, GET_META_DATA, BActivityThread.getUserId());
+                if (providerInfo != null) {
                     IBinder providerBinder = null;
                     if (BActivityThread.getAppPid() != -1) {
                         AppConfig appConfig = BlackBoxCore.getBActivityManager()
@@ -207,9 +175,18 @@ public class IActivityManagerProxy extends ClassInvocationStub {
                                             .wrapper(
                                                     BRContentProviderNative.get().asInterface(providerBinder),
                                                     providerInfo.packageName));
+                    return content;
+                } else {
+                    try {
+                        content = method.invoke(who, args);
+                        ContentProviderDelegate.update(content, (String) auth);
+                        return content;
+                    } catch (Throwable e) {
+                        Throwable cause = (e instanceof java.lang.reflect.InvocationTargetException) ? e.getCause() : e;
+                        Slog.w(TAG, "Exception accessing host provider '" + auth + "': " + (cause != null ? cause.getMessage() : e.getMessage()));
+                        return null;
+                    }
                 }
-
-                return content;
             }
             return method.invoke(who, args);
         }

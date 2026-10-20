@@ -49,30 +49,7 @@ public class ContentProviderStub extends ClassInvocationStub implements BContent
         
         
         String methodName = method.getName();
-        
-        
-        
-        if ("call".equals(methodName)) {
-            
-            AttributionSourceUtils.fixAttributionSourceInArgs(args);
-        } else {
-            
-            if (args != null && args.length > 0) {
-                for (int i = 0; i < args.length; i++) {
-                    Object arg = args[i];
-                    if (arg instanceof String) {
-                        String strArg = (String) arg;
-                        
-                        if (!isSystemProviderAuthority(strArg)) {
-                            
-                            args[i] = mAppPkg;
-                        }
-                    }
-                }
-                
-                AttributionSourceUtils.fixAttributionSourceInArgs(args);
-            }
-        }
+        AttributionSourceUtils.fixAttributionSourceInArgs(args);
         
         
         methodName = method.getName();

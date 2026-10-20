@@ -37,6 +37,7 @@ import top.niunaijun.blackbox.fake.service.IGraphicsStatsProxy;
 import top.niunaijun.blackbox.fake.service.IJobServiceProxy;
 import top.niunaijun.blackbox.fake.service.ILauncherAppsProxy;
 import top.niunaijun.blackbox.fake.service.ILocationManagerProxy;
+import top.niunaijun.blackbox.fake.service.ILocaleManagerProxy;
 import top.niunaijun.blackbox.fake.service.IMediaRouterServiceProxy;
 import top.niunaijun.blackbox.fake.service.IMediaSessionManagerProxy;
 import top.niunaijun.blackbox.fake.service.IAudioServiceProxy;
@@ -55,7 +56,6 @@ import top.niunaijun.blackbox.fake.service.FileSystemProxy;
 import top.niunaijun.blackbox.fake.service.GmsProxy;
 import top.niunaijun.blackbox.fake.service.LevelDbProxy;
 import top.niunaijun.blackbox.fake.service.DeviceIdProxy;
-import top.niunaijun.blackbox.fake.service.GoogleAccountManagerProxy;
 import top.niunaijun.blackbox.fake.service.AuthenticationProxy;
 import top.niunaijun.blackbox.fake.service.AndroidIdProxy;
 import top.niunaijun.blackbox.fake.service.AudioPermissionProxy;
@@ -139,7 +139,6 @@ public class HookManager {
             addInjector(new GmsProxy());
             addInjector(new LevelDbProxy());
             addInjector(new DeviceIdProxy());
-            addInjector(new GoogleAccountManagerProxy());
             addInjector(new AuthenticationProxy());
             addInjector(new AndroidIdProxy());
             addInjector(new AudioPermissionProxy());
@@ -176,6 +175,10 @@ public class HookManager {
             addInjector(new IWifiScannerProxy());
             addInjector(new ApkAssetsProxy());
             addInjector(new ResourcesManagerProxy());
+
+            if (BuildCompat.isTiramisu()) {
+                addInjector(new ILocaleManagerProxy());
+            }
             
             if (BuildCompat.isS()) {
                 addInjector(new IActivityClientProxy(null));

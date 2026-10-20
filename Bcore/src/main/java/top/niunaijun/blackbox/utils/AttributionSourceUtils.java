@@ -41,12 +41,33 @@ public class AttributionSourceUtils {
     public static void fixAttributionSourceUid(Object attributionSource) {
         try {
             if (attributionSource == null) return;
-            
+
+            // 1. BlackReflection via ContextCompat
+            try {
+                top.niunaijun.blackbox.utils.compat.ContextCompat.fixAttributionSourceState(attributionSource, BlackBoxCore.getHostUid());
+            } catch (Throwable ignored) {
+            }
+
+            // 2. Direct recursive inspection of mAttributionSourceState (Android 12-16)
             Class<?> attributionSourceClass = attributionSource.getClass();
-            
-            
+            try {
+                java.lang.reflect.Field stateField = null;
+                for (java.lang.reflect.Field f : attributionSourceClass.getDeclaredFields()) {
+                    if (f.getName().contains("AttributionSourceState") || f.getType().getName().contains("AttributionSourceState")) {
+                        stateField = f;
+                        break;
+                    }
+                }
+                if (stateField != null) {
+                    stateField.setAccessible(true);
+                    Object state = stateField.get(attributionSource);
+                    fixStateRecursively(state);
+                }
+            } catch (Throwable ignored) {
+            }
+
+            // 3. Fallback: direct fields on AttributionSource
             String[] uidFieldNames = {"mUid", "uid", "mCallingUid", "callingUid", "mSourceUid", "sourceUid"};
-            
             for (String fieldName : uidFieldNames) {
                 try {
                     java.lang.reflect.Field uidField = attributionSourceClass.getDeclaredField(fieldName);
@@ -54,24 +75,11 @@ public class AttributionSourceUtils {
                     uidField.set(attributionSource, BlackBoxCore.getHostUid());
                     Slog.d(TAG, "Fixed AttributionSource UID via field: " + fieldName);
                     break;
-                } catch (NoSuchFieldException e) {
-                    
+                } catch (Throwable ignored) {
                 }
             }
-            
-            
-            try {
-                java.lang.reflect.Method setUidMethod = attributionSourceClass.getDeclaredMethod("setUid", int.class);
-                setUidMethod.setAccessible(true);
-                setUidMethod.invoke(attributionSource, BlackBoxCore.getHostUid());
-                Slog.d(TAG, "Fixed AttributionSource UID via setter method");
-            } catch (Exception e) {
-                
-            }
-            
-            
+
             String[] packageFieldNames = {"mPackageName", "packageName", "mSourcePackage", "sourcePackage"};
-            
             for (String fieldName : packageFieldNames) {
                 try {
                     java.lang.reflect.Field packageField = attributionSourceClass.getDeclaredField(fieldName);
@@ -79,14 +87,53 @@ public class AttributionSourceUtils {
                     packageField.set(attributionSource, BlackBoxCore.getHostPkg());
                     Slog.d(TAG, "Fixed AttributionSource package name via field: " + fieldName);
                     break;
-                } catch (NoSuchFieldException e) {
-                    
+                } catch (Throwable ignored) {
                 }
             }
-            
         } catch (Exception e) {
             Slog.w(TAG, "Error fixing AttributionSource UID: " + e.getMessage());
         }
+    }
+
+    private static void fixStateRecursively(Object state) {
+        if (state == null) return;
+        try {
+            Class<?> sc = state.getClass();
+            try {
+                java.lang.reflect.Field uidF = sc.getField("uid");
+                uidF.setAccessible(true);
+                uidF.setInt(state, BlackBoxCore.getHostUid());
+            } catch (Throwable t) {
+                try {
+                    java.lang.reflect.Field uidF = sc.getDeclaredField("uid");
+                    uidF.setAccessible(true);
+                    uidF.setInt(state, BlackBoxCore.getHostUid());
+                } catch (Throwable ignored) {}
+            }
+            try {
+                java.lang.reflect.Field pkgF = sc.getField("packageName");
+                pkgF.setAccessible(true);
+                pkgF.set(state, BlackBoxCore.getHostPkg());
+            } catch (Throwable t) {
+                try {
+                    java.lang.reflect.Field pkgF = sc.getDeclaredField("packageName");
+                    pkgF.setAccessible(true);
+                    pkgF.set(state, BlackBoxCore.getHostPkg());
+                } catch (Throwable ignored) {}
+            }
+            try {
+                java.lang.reflect.Field nextF = sc.getField("next");
+                nextF.setAccessible(true);
+                Object nextVal = nextF.get(state);
+                if (nextVal instanceof Object[]) {
+                    for (Object elem : (Object[]) nextVal) {
+                        fixStateRecursively(elem);
+                    }
+                } else if (nextVal != null) {
+                    fixStateRecursively(nextVal);
+                }
+            } catch (Throwable ignored) {}
+        } catch (Throwable ignored) {}
     }
 
     
