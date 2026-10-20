@@ -1581,14 +1581,20 @@ public class BAccountManagerService extends IBAccountManagerService.Stub impleme
 
         @Override
         public void onServiceConnected(ComponentName name, IBinder service) {
-            top.niunaijun.blackbox.utils.Slog.w(TAG, "Session.onServiceConnected: component=" + name);
+            top.niunaijun.blackbox.utils.Slog.w(TAG, "Session.onServiceConnected: component=" + name + ", service=" + service);
             mAuthenticator = IAccountAuthenticator.Stub.asInterface(service);
             try {
+                top.niunaijun.blackbox.utils.Slog.w(TAG, "Session.onServiceConnected: invoking run()");
                 run();
+                top.niunaijun.blackbox.utils.Slog.w(TAG, "Session.onServiceConnected: run() finished without throwing");
             } catch (RemoteException e) {
                 top.niunaijun.blackbox.utils.Slog.w(TAG, "Session.onServiceConnected: RemoteException during run()", e);
                 onError(AccountManager.ERROR_CODE_REMOTE_EXCEPTION,
                         "remote exception");
+            } catch (Throwable t) {
+                top.niunaijun.blackbox.utils.Slog.w(TAG, "Session.onServiceConnected: Throwable during run()", t);
+                onError(AccountManager.ERROR_CODE_REMOTE_EXCEPTION,
+                        t.getMessage());
             }
         }
 

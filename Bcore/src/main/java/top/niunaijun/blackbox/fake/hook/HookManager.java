@@ -20,6 +20,7 @@ import top.niunaijun.blackbox.fake.service.IAppWidgetManagerProxy;
 import top.niunaijun.blackbox.fake.service.IAttributionSourceProxy;
 import top.niunaijun.blackbox.fake.service.IAutofillManagerProxy;
 import top.niunaijun.blackbox.fake.service.ISensitiveContentProtectionManagerProxy;
+import top.niunaijun.blackbox.fake.service.ISafetyCenterManagerProxy;
 import top.niunaijun.blackbox.fake.service.ISettingsSystemProxy;
 import top.niunaijun.blackbox.fake.service.IConnectivityManagerProxy;
 import top.niunaijun.blackbox.fake.service.ISystemSensorManagerProxy;
@@ -199,6 +200,18 @@ public class HookManager {
             
             if (BuildCompat.isPie()) {
                 addInjector(new ISystemUpdateProxy());
+            }
+
+            // SafetyCenterManager appeared in Android 13 (API 33)
+            // GMS accountsettings module calls isSafetyCenterEnabled() which throws
+            // SecurityException in sandbox (missing signature permission).
+            // Stub it to return false so GMS account module initializes properly.
+            if (android.os.Build.VERSION.SDK_INT >= 33) {
+                try {
+                    addInjector(new ISafetyCenterManagerProxy());
+                } catch (Throwable t) {
+                    // safety_center service may not exist on all devices
+                }
             }
             
             if (BuildCompat.isOreo()) {

@@ -140,6 +140,19 @@ public class CrashMonitor {
             Thread.setDefaultUncaughtExceptionHandler(new Thread.UncaughtExceptionHandler() {
                 @Override
                 public void uncaughtException(Thread thread, Throwable throwable) {
+                    // Swallow Hilt ClassCastException in bgExecutor threads (Play Store quick_launch)
+                    // These are non-fatal background init failures that don't affect the UI
+                    if (thread != null && thread.getName() != null &&
+                            thread.getName().contains("bgExecutor")) {
+                        Throwable cause = throwable;
+                        while (cause != null) {
+                            if (cause instanceof ClassCastException) {
+                                Slog.w(TAG, "Swallowing Hilt ClassCastException in " + thread.getName() + " to prevent process crash");
+                                return;
+                            }
+                            cause = cause.getCause();
+                        }
+                    }
                     handleCrash("JavaException", thread, throwable);
                 }
             });
