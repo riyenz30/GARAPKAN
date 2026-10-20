@@ -1557,7 +1557,11 @@ public class BAccountManagerService extends IBAccountManagerService.Stub impleme
         private void unbind() {
             if (mAuthenticator != null) {
                 mAuthenticator = null;
-                mContext.unbindService(this);
+                try {
+                    mContext.unbindService(this);
+                } catch (Exception e) {
+                    Log.w(TAG, "unbind: " + e.getMessage());
+                }
             }
         }
 
@@ -1743,13 +1747,6 @@ public class BAccountManagerService extends IBAccountManagerService.Stub impleme
                 return false;
             }
 
-
-
-
-
-
-
-
             Intent intent = new Intent();
             intent.setAction(AccountManager.ACTION_AUTHENTICATOR_INTENT);
             ComponentName componentName = new ComponentName(authenticatorInfo.serviceInfo.packageName, authenticatorInfo.serviceInfo.name);
@@ -1762,16 +1759,38 @@ public class BAccountManagerService extends IBAccountManagerService.Stub impleme
             }
             int flags = Context.BIND_AUTO_CREATE;
 
-
-
-            if (!mContext.bindService(intent, this, flags)) {
-                if (Log.isLoggable(TAG, Log.VERBOSE)) {
-                    Log.v(TAG, "bindService to " + componentName + " failed");
+            // Route through BlackBox virtual service to bypass Android OS permission checks
+            try {
+                top.niunaijun.blackbox.core.system.am.BActivityManagerService ams =
+                        top.niunaijun.blackbox.core.system.am.BActivityManagerService.get();
+                if (ams != null) {
+                    Intent proxyIntent = ams.bindService(intent, null, null, mAccounts.userId);
+                    if (proxyIntent != null && proxyIntent.getComponent() != null) {
+                        if (!mContext.bindService(proxyIntent, this, flags)) {
+                            if (Log.isLoggable(TAG, Log.VERBOSE)) {
+                                Log.v(TAG, "bindService (proxy) to " + componentName + " failed");
+                            }
+                            return false;
+                        }
+                        return true;
+                    }
                 }
-                return false;
+            } catch (Throwable t) {
+                Log.w(TAG, "bindToAuthenticator virtual proxy failed", t);
             }
 
-            return true;
+            try {
+                if (!mContext.bindService(intent, this, flags)) {
+                    if (Log.isLoggable(TAG, Log.VERBOSE)) {
+                        Log.v(TAG, "bindService to " + componentName + " failed");
+                    }
+                    return false;
+                }
+                return true;
+            } catch (SecurityException e) {
+                Log.w(TAG, "bindToAuthenticator: SecurityException binding to " + componentName + ", " + e.getMessage());
+                return false;
+            }
         }
     }
 

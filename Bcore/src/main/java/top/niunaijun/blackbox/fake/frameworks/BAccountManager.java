@@ -209,6 +209,14 @@ public class BAccountManager extends BlackManager<IBAccountManagerService> {
             getService().addAccount(response, accountType, authTokenType, requiredFeatures, expectActivityLaunch, options, BActivityThread.getUserId());
         } catch (RemoteException e) {
             e.printStackTrace();
+        } catch (SecurityException e) {
+            Log.w("BAccountManager", "addAccount SecurityException: " + e.getMessage());
+            try {
+                Bundle result = new Bundle();
+                result.putInt(AccountManager.KEY_ERROR_CODE, AccountManager.ERROR_CODE_REMOTE_EXCEPTION);
+                result.putString(AccountManager.KEY_ERROR_MESSAGE, "Cannot bind authenticator: " + e.getMessage());
+                response.onError(AccountManager.ERROR_CODE_REMOTE_EXCEPTION, e.getMessage());
+            } catch (Exception ignored) {}
         }
     }
 
