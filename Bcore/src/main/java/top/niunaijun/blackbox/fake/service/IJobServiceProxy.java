@@ -40,20 +40,18 @@ public class IJobServiceProxy extends BinderInvocationStub {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
             try {
-                
                 if (args == null || args.length == 0) {
-                    Slog.w(TAG, "Schedule: No arguments provided, returning RESULT_FAILURE");
-                    return 0; 
+                    Slog.w(TAG, "Schedule: No arguments provided, returning RESULT_SUCCESS");
+                    return 1; // JobScheduler.RESULT_SUCCESS
                 }
                 
                 if (args[0] == null) {
-                    Slog.w(TAG, "Schedule: args[0] is null, returning RESULT_FAILURE");
-                    return 0; 
+                    Slog.w(TAG, "Schedule: args[0] is null (method=" + method.getName() + ", args.len=" + args.length + "), returning RESULT_SUCCESS to prevent app crash");
+                    return 1; // Return RESULT_SUCCESS instead of RESULT_FAILURE so apps don't abort
                 }
                 
                 if (!(args[0] instanceof JobInfo)) {
-                    Slog.w(TAG, "Schedule: args[0] is not JobInfo: " + args[0].getClass().getSimpleName());
-                    
+                    Slog.w(TAG, "Schedule: args[0] is not JobInfo: " + args[0].getClass().getName());
                     return handleNonJobInfoSchedule(who, method, args);
                 }
                 

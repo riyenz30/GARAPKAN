@@ -1374,11 +1374,14 @@ public class BAccountManagerService extends IBAccountManagerService.Stub impleme
     }
 
     public void loadAuthenticatorCache(String packageName) {
+        // Always do a full rescan: clear and query ALL installed packages.
+        // Previously, passing a non-null packageName would clear the entire cache
+        // and then only query that single package, wiping every other authenticator
+        // (including com.google from GMS). This caused Google account login to fail
+        // after any non-Google app was installed.
         mAuthenticatorCache.authenticators.clear();
         Intent intent = new Intent(AccountManager.ACTION_AUTHENTICATOR_INTENT);
-        if (packageName != null) {
-            intent.setPackage(packageName);
-        }
+        // Never filter by package — always discover all authenticators
         generateServicesMap(
                 mPms.queryIntentServices(intent, PackageManager.GET_META_DATA, BUserHandle.USER_ALL),
                 mAuthenticatorCache.authenticators, new RegisteredServicesParser());

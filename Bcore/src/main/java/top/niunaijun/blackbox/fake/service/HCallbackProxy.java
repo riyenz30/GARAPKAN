@@ -116,8 +116,8 @@ public class HCallbackProxy implements IInjectHook, Handler.Callback {
             } catch (Throwable ignored) {
             }
         }
-        if (items == null) {
-            Slog.e(TAG, "No activity callbacks / transaction items in " + clientTransaction);
+        if (items == null || items.isEmpty()) {
+            // This is completely normal for non-launch transactions (e.g. Resume, Pause, Stop)
             return null;
         }
 
