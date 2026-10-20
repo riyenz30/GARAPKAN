@@ -659,7 +659,7 @@ public class BAccountManagerService extends IBAccountManagerService.Stub impleme
         if (response == null) throw new IllegalArgumentException("response is null");
         if (accountType == null) throw new IllegalArgumentException("accountType is null");
 
-
+        top.niunaijun.blackbox.utils.Slog.w(TAG, "addAccount called: accountType=" + accountType + ", userId=" + userId);
 
         final Bundle options = (optionsIn == null) ? new Bundle() : optionsIn;
 
@@ -1486,8 +1486,8 @@ public class BAccountManagerService extends IBAccountManagerService.Stub impleme
 
         
         protected boolean checkKeyIntent(int authUid, Intent intent) {
-            
-            
+
+
             if (intent.getClipData() == null) {
                 intent.setClipData(ClipData.newPlainText(null, null));
             }
@@ -1499,9 +1499,21 @@ public class BAccountManagerService extends IBAccountManagerService.Stub impleme
             try {
                 ResolveInfo resolveInfo = mPms.resolveActivity(intent, 0, null, mAccounts.userId);
                 if (resolveInfo == null) {
+                    // Fallback: try resolving via host PackageManager for GMS/vending activities
+                    top.niunaijun.blackbox.utils.Slog.w(TAG, "checkKeyIntent: virtual resolve failed for intent=" + intent + ", trying host PM fallback");
+                    try {
+                        android.content.pm.ResolveInfo hostResolve = BlackBoxCore.getContext().getPackageManager().resolveActivity(intent, 0);
+                        if (hostResolve != null) {
+                            top.niunaijun.blackbox.utils.Slog.w(TAG, "checkKeyIntent: host PM resolved to " + hostResolve.activityInfo.name + ", ALLOWING");
+                            return true;
+                        }
+                    } catch (Exception e) {
+                        top.niunaijun.blackbox.utils.Slog.w(TAG, "checkKeyIntent: host PM fallback failed: " + e.getMessage());
+                    }
+                    top.niunaijun.blackbox.utils.Slog.w(TAG, "checkKeyIntent: REJECTING intent (both virtual and host resolve failed)");
                     return false;
                 }
-                
+
                 return true;
             } finally {
                 Binder.restoreCallingIdentity(bid);
@@ -1545,11 +1557,9 @@ public class BAccountManagerService extends IBAccountManagerService.Stub impleme
         }
 
         void bind() {
-            if (Log.isLoggable(TAG, Log.VERBOSE)) {
-                Log.v(TAG, "initiating bind to authenticator type " + mAccountType);
-            }
+            top.niunaijun.blackbox.utils.Slog.w(TAG, "Session.bind: initiating bind to authenticator " + mAccountType);
             if (!bindToAuthenticator(mAccountType)) {
-                Log.d(TAG, "bind attempt failed for " + toDebugString());
+                top.niunaijun.blackbox.utils.Slog.w(TAG, "Session.bind: bind attempt failed for " + toDebugString());
                 onError(AccountManager.ERROR_CODE_REMOTE_EXCEPTION, "bind failure");
             }
         }
@@ -1571,10 +1581,12 @@ public class BAccountManagerService extends IBAccountManagerService.Stub impleme
 
         @Override
         public void onServiceConnected(ComponentName name, IBinder service) {
+            top.niunaijun.blackbox.utils.Slog.w(TAG, "Session.onServiceConnected: component=" + name);
             mAuthenticator = IAccountAuthenticator.Stub.asInterface(service);
             try {
                 run();
             } catch (RemoteException e) {
+                top.niunaijun.blackbox.utils.Slog.w(TAG, "Session.onServiceConnected: RemoteException during run()", e);
                 onError(AccountManager.ERROR_CODE_REMOTE_EXCEPTION,
                         "remote exception");
             }
@@ -1616,6 +1628,7 @@ public class BAccountManagerService extends IBAccountManagerService.Stub impleme
 
         @Override
         public void onResult(Bundle result) {
+            top.niunaijun.blackbox.utils.Slog.w(TAG, "Session.onResult: bundle=" + (result != null ? result.keySet() : "null"));
             mNumResults++;
             Intent intent = null;
             if (result != null) {
@@ -1715,6 +1728,7 @@ public class BAccountManagerService extends IBAccountManagerService.Stub impleme
 
         @Override
         public void onError(int errorCode, String errorMessage) {
+            top.niunaijun.blackbox.utils.Slog.w(TAG, "Session.onError: errorCode=" + errorCode + ", errorMessage=" + errorMessage);
             mNumErrors++;
             IAccountManagerResponse response = getResponseAndClose();
             if (response != null) {
