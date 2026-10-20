@@ -46,6 +46,15 @@ object CrashLog {
         val appContext = context.applicationContext
         val engineChain = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
+            // Dual Space: ignore benign Hilt background crashes in Play Store (:quick_launch)
+            val threadName = thread.name ?: ""
+            val isBgExecutor = threadName.contains("bgExecutor")
+            val isHiltCast = throwable is ClassCastException || throwable.cause is ClassCastException
+            if (isBgExecutor && isHiltCast) {
+                DsLog.w(TAG, "Ignoring benign Hilt ClassCastException on $threadName")
+                return@setDefaultUncaughtExceptionHandler
+            }
+
             runCatching { write(appContext, thread, throwable, "Crash") }
             val isMain = thread === Looper.getMainLooper().thread
             val sys = systemHandler

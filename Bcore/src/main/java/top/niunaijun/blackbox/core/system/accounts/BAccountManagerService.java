@@ -663,7 +663,40 @@ public class BAccountManagerService extends IBAccountManagerService.Stub impleme
 
         final Bundle options = (optionsIn == null) ? new Bundle() : optionsIn;
 
-
+        // For Google accounts, delegate directly to the host system AccountManager.
+        // The host OS AccountManager has full permissions, live GMS Chimera modules,
+        // and can reliably produce the Google Sign In intent/wizard without virtual sandbox binding issues.
+        if ("com.google".equals(accountType)) {
+            top.niunaijun.blackbox.utils.Slog.w(TAG, "addAccount: com.google detected, delegating to host AccountManager");
+            try {
+                AccountManager hostAm = AccountManager.get(mContext);
+                hostAm.addAccount(accountType, authTokenType, requiredFeatures, options, null, new android.accounts.AccountManagerCallback<Bundle>() {
+                    @Override
+                    public void run(android.accounts.AccountManagerFuture<Bundle> future) {
+                        try {
+                            Bundle bundle = future.getResult();
+                            top.niunaijun.blackbox.utils.Slog.w(TAG, "addAccount host callback success: bundle=" + (bundle != null ? bundle.keySet() : "null"));
+                            if (bundle != null && bundle.containsKey(AccountManager.KEY_INTENT)) {
+                                Intent intent = bundle.getParcelable(AccountManager.KEY_INTENT);
+                                top.niunaijun.blackbox.utils.Slog.w(TAG, "addAccount host returned KEY_INTENT: " + intent);
+                                if (intent != null) {
+                                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                                }
+                            }
+                            response.onResult(bundle);
+                        } catch (Exception e) {
+                            top.niunaijun.blackbox.utils.Slog.w(TAG, "addAccount host callback error: " + e.getMessage());
+                            try {
+                                response.onError(AccountManager.ERROR_CODE_REMOTE_EXCEPTION, e.getMessage());
+                            } catch (RemoteException ignored) {}
+                        }
+                    }
+                }, mHandler);
+                return;
+            } catch (Throwable t) {
+                top.niunaijun.blackbox.utils.Slog.w(TAG, "addAccount: host delegation failed, falling back to virtual Session", t);
+            }
+        }
 
         BUserAccounts accounts = getUserAccounts(userId);
         new Session(accounts, response, accountType, expectActivityLaunch,
