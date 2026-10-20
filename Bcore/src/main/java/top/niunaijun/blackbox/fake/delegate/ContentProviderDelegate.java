@@ -43,16 +43,11 @@ public class ContentProviderDelegate {
         if (iInterface instanceof Proxy)
             return;
 
-        // If the authority belongs to the virtual app itself or another installed virtual app,
-        // do not wrap with ContentProviderStub (which breaks internal type casts).
-        try {
-            ProviderInfo info = BlackBoxCore.getBPackageManager().resolveContentProvider(auth, 0, BActivityThread.getUserId());
-            if (info != null) {
-                Slog.d(TAG, "ContentProviderDelegate: Skipping wrapper for virtual package provider: " + auth);
-                return;
-            }
-        } catch (Throwable t) {
-            Slog.w(TAG, "Error resolving provider for " + auth, t);
+        // Only wrap known system providers. All other providers (app-internal, GMS, etc.)
+        // must NOT be wrapped — wrapping causes ClassCastException in internal code.
+        if (!isSystemAuthority(auth)) {
+            Slog.d(TAG, "ContentProviderDelegate.update: Skipping wrapper for non-system provider: " + auth);
+            return;
         }
 
         IInterface bContentProvider;
@@ -89,19 +84,13 @@ public class ContentProviderDelegate {
             if (!sInjected.contains(providerName)) {
                 sInjected.add(providerName);
                 
-                // Do NOT wrap in-process providers belonging to the virtual app itself!
-                // Wrapping them causes ClassCastException when the app casts them to internal classes.
-                try {
-                    String currentPkg = BActivityThread.getAppPackageName();
-                    if (currentPkg != null) {
-                        ProviderInfo info = BlackBoxCore.getBPackageManager().resolveContentProvider(providerName, 0, BActivityThread.getUserId());
-                        if (info != null && currentPkg.equals(info.packageName)) {
-                            Slog.d(TAG, "Skipping ContentProviderStub wrapping for local provider: " + providerName);
-                            continue;
-                        }
-                    }
-                } catch (Throwable t) {
-                    Slog.w(TAG, "Error checking provider origin for " + providerName, t);
+                // ONLY wrap system providers (settings, media, telephony, etc.).
+                // NEVER wrap app internal/local providers — doing so breaks internal ClassCastException
+                // in Google Play Store (SecurityHubContentProvider, CachedPackageContentProvider),
+                // Meitu, and other cloned apps that cast to internal concrete transport classes.
+                if (!isSystemAuthority(providerName)) {
+                    Slog.d(TAG, "ContentProviderDelegate: Skipping wrapper for non-system provider: " + providerName);
+                    continue;
                 }
 
                 final IInterface iInterface = BRActivityThreadProviderClientRecordP.get(value).mProvider();
@@ -109,6 +98,19 @@ public class ContentProviderDelegate {
                 BRActivityThreadProviderClientRecordP.get(value)._set_mNames(new String[]{providerName});
             }
         }
+    }
+
+    private static boolean isSystemAuthority(String authority) {
+        if (authority == null) return false;
+        return authority.equals("settings") ||
+               authority.equals("media") ||
+               authority.equals("telephony") ||
+               authority.equals("downloads") ||
+               authority.equals("contacts") ||
+               authority.equals("call_log") ||
+               authority.equals("calendar") ||
+               authority.equals("user_dictionary") ||
+               authority.startsWith("com.android.providers.settings");
     }
 
     public static void clearSettingProvider() {
