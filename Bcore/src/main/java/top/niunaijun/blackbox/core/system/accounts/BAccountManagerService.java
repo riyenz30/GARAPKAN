@@ -102,6 +102,40 @@ public class BAccountManagerService extends IBAccountManagerService.Stub impleme
         mPms = BPackageManagerService.get();
     }
 
+    /**
+     * Synchronise Google accounts from the host device's AccountManager into
+     * the virtual BUserAccounts for the given sandbox user.  This is the
+     * bridge that lets Google Sign-In work: the user logs in via the host
+     * GMS wizard (which stores the account in the real OS), and this method
+     * copies it into the sandbox so cloned Play Store / apps can see it.
+     */
+    private void syncHostGoogleAccounts(int userId) {
+        try {
+            AccountManager hostAm = AccountManager.get(mContext);
+            Account[] hostAccounts = hostAm.getAccountsByType("com.google");
+            if (hostAccounts == null || hostAccounts.length == 0) return;
+
+            BUserAccounts accounts = getUserAccounts(userId);
+            synchronized (accounts.lock) {
+                for (Account hostAcc : hostAccounts) {
+                    boolean exists = false;
+                    for (BAccount bAcc : accounts.accounts) {
+                        if (bAcc.account.equals(hostAcc)) {
+                            exists = true;
+                            break;
+                        }
+                    }
+                    if (!exists) {
+                        Slog.w(TAG, "syncHostGoogleAccounts: importing " + hostAcc.name + " into userId=" + userId);
+                        addAccountInternal(accounts, hostAcc, null, null, null);
+                    }
+                }
+            }
+        } catch (Throwable t) {
+            Slog.w(TAG, "syncHostGoogleAccounts failed: " + t.getMessage());
+        }
+    }
+
     @Override
     public void systemReady() {
         loadAccounts();
@@ -215,13 +249,13 @@ public class BAccountManagerService extends IBAccountManagerService.Stub impleme
 
     @Override
     public Account[] getAccountsForPackage(String packageName, int uid, int userId) throws RemoteException {
-        
+        syncHostGoogleAccounts(userId);
         BUserAccounts userAccounts = getUserAccounts(userId);
         List<Account> accounts = new ArrayList<>();
         synchronized (userAccounts.lock) {
             for (BAccount account : userAccounts.accounts) {
                 Integer visibility = account.visibility.get(packageName);
-                if (visibility != null && visibility == AccountManager.VISIBILITY_VISIBLE) {
+                if (visibility == null || visibility == AccountManager.VISIBILITY_VISIBLE || visibility == AccountManager.VISIBILITY_USER_MANAGED_VISIBLE) {
                     accounts.add(account.account);
                 }
             }
@@ -231,14 +265,16 @@ public class BAccountManagerService extends IBAccountManagerService.Stub impleme
 
     @Override
     public Account[] getAccountsByTypeForPackage(String type, String packageName, int userId) throws RemoteException {
-        
+        if (type == null || "com.google".equals(type)) {
+            syncHostGoogleAccounts(userId);
+        }
         BUserAccounts userAccounts = getUserAccounts(userId);
         List<Account> accounts = new ArrayList<>();
         synchronized (userAccounts.lock) {
             for (BAccount account : userAccounts.accounts) {
                 if (account.account.type.equals(type)) {
                     Integer visibility = account.visibility.get(packageName);
-                    if (visibility != null && visibility == AccountManager.VISIBILITY_VISIBLE) {
+                    if (visibility == null || visibility == AccountManager.VISIBILITY_VISIBLE || visibility == AccountManager.VISIBILITY_USER_MANAGED_VISIBLE) {
                         accounts.add(account.account);
                     }
                 }
@@ -249,11 +285,14 @@ public class BAccountManagerService extends IBAccountManagerService.Stub impleme
 
     @Override
     public Account[] getAccountsAsUser(String accountType, int userId) throws RemoteException {
+        if (accountType == null || "com.google".equals(accountType)) {
+            syncHostGoogleAccounts(userId);
+        }
         BUserAccounts userAccounts = getUserAccounts(userId);
         List<Account> accounts = new ArrayList<>();
         synchronized (userAccounts.lock) {
             for (BAccount account : userAccounts.accounts) {
-                if (account.account.type.equals(accountType)) {
+                if (accountType == null || account.account.type.equals(accountType)) {
                     accounts.add(account.account);
                 }
             }
@@ -265,6 +304,10 @@ public class BAccountManagerService extends IBAccountManagerService.Stub impleme
     public void getAccountByTypeAndFeatures(IAccountManagerResponse response, String accountType, String[] features, int userId) throws RemoteException {
         if (response == null) throw new IllegalArgumentException("response is null");
         if (accountType == null) throw new IllegalArgumentException("accountType is null");
+
+        if ("com.google".equals(accountType)) {
+            syncHostGoogleAccounts(userId);
+        }
 
         String opPackageName = getCallingPackageName();
 
@@ -312,6 +355,10 @@ public class BAccountManagerService extends IBAccountManagerService.Stub impleme
     public void getAccountsByFeatures(IAccountManagerResponse response, String type, String[] features, int userId) throws RemoteException {
         if (response == null) throw new IllegalArgumentException("response is null");
         if (type == null) throw new IllegalArgumentException("accountType is null");
+
+        if ("com.google".equals(type)) {
+            syncHostGoogleAccounts(userId);
+        }
 
         String opPackageName = getCallingPackageName();
         
@@ -928,8 +975,15 @@ public class BAccountManagerService extends IBAccountManagerService.Stub impleme
     }
 
     public Account[] getAccounts(int userId, String opPackageName) {
+        syncHostGoogleAccounts(userId);
         BUserAccounts userAccounts = getUserAccounts(userId);
-        return userAccounts.accounts.toArray(new Account[]{});
+        List<Account> list = new ArrayList<>();
+        synchronized (userAccounts.lock) {
+            for (BAccount b : userAccounts.accounts) {
+                list.add(b.account);
+            }
+        }
+        return list.toArray(new Account[]{});
     }
 
     @Override
