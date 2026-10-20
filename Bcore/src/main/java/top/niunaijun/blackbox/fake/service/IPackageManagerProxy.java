@@ -403,6 +403,11 @@ public class IPackageManagerProxy extends BinderInvocationStub {
                 return PackageManager.PERMISSION_GRANTED;
             }
 
+            if ("com.google.android.setupwizard.READ_DEVICE_ORIGIN".equals(permission)
+                    || "com.google.android.setupwizard.READ_DEVICE_ORIGIN_FIRST_PARTY".equals(permission)) {
+                return PackageManager.PERMISSION_GRANTED;
+            }
+
             
             if (isStorageOrMediaPermission(permission)) {
                 Slog.d(TAG, "SimpleAudioPermissionHook: Granting storage/media permission: " + permission + " to " + packageName);

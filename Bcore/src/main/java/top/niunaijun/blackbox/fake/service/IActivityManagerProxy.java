@@ -154,6 +154,17 @@ public class IActivityManagerProxy extends ClassInvocationStub {
                     Slog.w(TAG, "Forcing GSF provider '" + auth + "' to resolve from HOST for valid checkin/android_id");
                 }
 
+                // Block providers that throw SecurityException in sandbox
+                // (sandbox lacks signature permissions of the host system apps).
+                // Returning null makes ContentResolver.query() return null instead
+                // of crashing the caller with an uncaught SecurityException.
+                String authStr = String.valueOf(auth);
+                if (authStr.contains("com.google.android.setupwizard") ||
+                        "com.google.android.setupwizard.deviceorigin.provider".equals(authStr)) {
+                    Slog.w(TAG, "Blocking restricted provider '" + auth + "' in sandbox (lacks signature permission)");
+                    return null;
+                }
+
                 ProviderInfo providerInfo = forceHost ? null :
                     BlackBoxCore.getBPackageManager()
                         .resolveContentProvider(
@@ -810,6 +821,14 @@ public class IActivityManagerProxy extends ClassInvocationStub {
             String permission = (String) args[0];
             if (permission.equals(Manifest.permission.ACCOUNT_MANAGER)
                     || permission.equals(Manifest.permission.SEND_SMS)) {
+                return PackageManager.PERMISSION_GRANTED;
+            }
+            
+            // Grant SetupWizard device-origin permissions to sandbox apps.
+            // Play Store queries DeviceOriginProvider which requires these
+            // signature permissions. Without this, SecurityException crash.
+            if ("com.google.android.setupwizard.READ_DEVICE_ORIGIN".equals(permission)
+                    || "com.google.android.setupwizard.READ_DEVICE_ORIGIN_FIRST_PARTY".equals(permission)) {
                 return PackageManager.PERMISSION_GRANTED;
             }
             
