@@ -437,6 +437,7 @@ public class BaseInstrumentationDelegate extends Instrumentation {
     }
 
     public ActivityResult execStartActivity(Context context, IBinder binder, IBinder binder1, Activity activity, Intent intent, int i, Bundle bundle) throws Throwable {
+        if (intent == null) return null;
         return invokeExecStartActivity(mBaseInstrumentation,
                 Context.class,
                 IBinder.class,
@@ -448,6 +449,7 @@ public class BaseInstrumentationDelegate extends Instrumentation {
     }
 
     public ActivityResult execStartActivity(Context context, IBinder binder, IBinder binder1, String str, Intent intent, int i, Bundle bundle) throws Throwable {
+        if (intent == null) return null;
         return invokeExecStartActivity(mBaseInstrumentation,
                 Context.class,
                 IBinder.class,
@@ -459,6 +461,7 @@ public class BaseInstrumentationDelegate extends Instrumentation {
     }
 
     public ActivityResult execStartActivity(Context context, IBinder binder, IBinder binder1, Fragment fragment, Intent intent, int i) throws Throwable {
+        if (intent == null) return null;
         return invokeExecStartActivity(mBaseInstrumentation,
                 Context.class,
                 IBinder.class,
@@ -469,6 +472,7 @@ public class BaseInstrumentationDelegate extends Instrumentation {
     }
 
     public ActivityResult execStartActivity(Context context, IBinder binder, IBinder binder1, Activity activity, Intent intent, int i) throws Throwable {
+        if (intent == null) return null;
         return invokeExecStartActivity(mBaseInstrumentation,
                 Context.class,
                 IBinder.class,
@@ -479,6 +483,7 @@ public class BaseInstrumentationDelegate extends Instrumentation {
     }
 
     public ActivityResult execStartActivity(Context context, IBinder binder, IBinder binder1, Fragment fragment, Intent intent, int i, Bundle bundle) throws Throwable {
+        if (intent == null) return null;
         return invokeExecStartActivity(mBaseInstrumentation,
                 Context.class,
                 IBinder.class,
@@ -491,6 +496,7 @@ public class BaseInstrumentationDelegate extends Instrumentation {
 
     @TargetApi(Build.VERSION_CODES.JELLY_BEAN_MR1)
     public ActivityResult execStartActivity(Context context, IBinder iBinder, IBinder iBinder2, Activity activity, Intent intent, int i, Bundle bundle, UserHandle userHandle) throws Throwable {
+        if (intent == null) return null;
         return invokeExecStartActivity(mBaseInstrumentation,
                 Context.class,
                 IBinder.class,

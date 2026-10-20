@@ -20,6 +20,7 @@ import top.niunaijun.blackbox.fake.service.IAppWidgetManagerProxy;
 import top.niunaijun.blackbox.fake.service.IAttributionSourceProxy;
 import top.niunaijun.blackbox.fake.service.IAutofillManagerProxy;
 import top.niunaijun.blackbox.fake.service.ISensitiveContentProtectionManagerProxy;
+import top.niunaijun.blackbox.fake.service.ICrossProfileAppsProxy;
 import top.niunaijun.blackbox.fake.service.ISafetyCenterManagerProxy;
 import top.niunaijun.blackbox.fake.service.ISettingsSystemProxy;
 import top.niunaijun.blackbox.fake.service.IConnectivityManagerProxy;
@@ -200,6 +201,10 @@ public class HookManager {
             
             if (BuildCompat.isPie()) {
                 addInjector(new ISystemUpdateProxy());
+                try {
+                    addInjector(new ICrossProfileAppsProxy());
+                } catch (Throwable ignored) {
+                }
             }
 
             // SafetyCenterManager appeared in Android 13 (API 33)
