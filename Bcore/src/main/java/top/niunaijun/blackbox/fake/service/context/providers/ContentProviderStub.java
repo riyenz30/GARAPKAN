@@ -63,24 +63,22 @@ public class ContentProviderStub extends ClassInvocationStub implements BContent
             } catch (Throwable e) {
                 
                 Throwable cause = e.getCause();
+                if (cause == null) {
+                    cause = e;
+                }
                 if (isUidMismatchError(cause)) {
-                    Slog.w(TAG, "UID mismatch in ContentProvider call, returning safe default: " + cause.getMessage());
+                    Slog.w(TAG, "UID mismatch in ContentProvider call (" + methodName + "), returning safe default: " + cause.getMessage());
                     return getSafeDefaultValue(methodName, method.getReturnType());
                 } else if (cause instanceof RuntimeException) {
                     String message = cause.getMessage();
                     if (message != null && (message.contains("uid") || message.contains("permission"))) {
-                        Slog.w(TAG, "Permission/UID error in ContentProvider call, returning safe default: " + message);
+                        Slog.w(TAG, "Permission/UID error in ContentProvider call (" + methodName + "), returning safe default: " + message);
                         return getSafeDefaultValue(methodName, method.getReturnType());
                     }
                 }
                 
-                
-                if (methodName.equals("call")) {
-                    Slog.w(TAG, "Error in call method, returning safe default: " + e.getMessage());
-                    return getSafeDefaultValue(methodName, method.getReturnType());
-                }
-                
-                throw e.getCause();
+                // Do not suppress unexpected errors on internal virtual calls unless it's a known system provider
+                throw cause;
             }
         }
         

@@ -168,13 +168,19 @@ public class IActivityManagerProxy extends ClassInvocationStub {
 
                     content = method.invoke(who, args);
                     Reflector.with(content).field("info").set(providerInfo);
-                    Reflector.with(content)
-                            .field("provider")
-                            .set(
-                                    new ContentProviderStub()
-                                            .wrapper(
-                                                    BRContentProviderNative.get().asInterface(providerBinder),
-                                                    providerInfo.packageName));
+                    IInterface binderInterface = BRContentProviderNative.get().asInterface(providerBinder);
+                    // If caller is in the same package (in-process), keep raw interface; otherwise wrap for cross-process UID fixes
+                    if (providerInfo.packageName != null && providerInfo.packageName.equals(BActivityThread.getAppPackageName())) {
+                        Reflector.with(content).field("provider").set(binderInterface);
+                    } else {
+                        Reflector.with(content)
+                                .field("provider")
+                                .set(
+                                        new ContentProviderStub()
+                                                .wrapper(
+                                                        binderInterface,
+                                                        providerInfo.packageName));
+                    }
                     return content;
                 } else {
                     try {

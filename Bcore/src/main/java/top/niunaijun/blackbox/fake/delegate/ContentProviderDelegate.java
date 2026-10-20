@@ -19,9 +19,12 @@ import black.android.providers.BRSettingsNameValueCache;
 import black.android.providers.BRSettingsNameValueCacheOreo;
 import black.android.providers.BRSettingsSecure;
 import black.android.providers.BRSettingsSystem;
+import android.content.pm.ProviderInfo;
 import top.niunaijun.blackbox.BlackBoxCore;
+import top.niunaijun.blackbox.app.BActivityThread;
 import top.niunaijun.blackbox.fake.service.context.providers.ContentProviderStub;
 import top.niunaijun.blackbox.fake.service.context.providers.SystemProviderStub;
+import top.niunaijun.blackbox.utils.Slog;
 import top.niunaijun.blackbox.utils.compat.BuildCompat;
 
 
@@ -39,6 +42,19 @@ public class ContentProviderDelegate {
 
         if (iInterface instanceof Proxy)
             return;
+
+        // If the authority belongs to the virtual app itself or another installed virtual app,
+        // do not wrap with ContentProviderStub (which breaks internal type casts).
+        try {
+            ProviderInfo info = BlackBoxCore.getBPackageManager().resolveContentProvider(auth, 0, BActivityThread.getUserId());
+            if (info != null) {
+                Slog.d(TAG, "ContentProviderDelegate: Skipping wrapper for virtual package provider: " + auth);
+                return;
+            }
+        } catch (Throwable t) {
+            Slog.w(TAG, "Error resolving provider for " + auth, t);
+        }
+
         IInterface bContentProvider;
         switch (auth) {
             case "media":
@@ -72,6 +88,22 @@ public class ContentProviderDelegate {
             String providerName = mNames[0];
             if (!sInjected.contains(providerName)) {
                 sInjected.add(providerName);
+                
+                // Do NOT wrap in-process providers belonging to the virtual app itself!
+                // Wrapping them causes ClassCastException when the app casts them to internal classes.
+                try {
+                    String currentPkg = BActivityThread.getAppPackageName();
+                    if (currentPkg != null) {
+                        ProviderInfo info = BlackBoxCore.getBPackageManager().resolveContentProvider(providerName, 0, BActivityThread.getUserId());
+                        if (info != null && currentPkg.equals(info.packageName)) {
+                            Slog.d(TAG, "Skipping ContentProviderStub wrapping for local provider: " + providerName);
+                            continue;
+                        }
+                    }
+                } catch (Throwable t) {
+                    Slog.w(TAG, "Error checking provider origin for " + providerName, t);
+                }
+
                 final IInterface iInterface = BRActivityThreadProviderClientRecordP.get(value).mProvider();
                 BRActivityThreadProviderClientRecordP.get(value)._set_mProvider(new ContentProviderStub().wrapper(iInterface, BlackBoxCore.getHostPkg()));
                 BRActivityThreadProviderClientRecordP.get(value)._set_mNames(new String[]{providerName});
