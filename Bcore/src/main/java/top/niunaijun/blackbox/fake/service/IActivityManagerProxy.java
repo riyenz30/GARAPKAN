@@ -186,6 +186,18 @@ public class IActivityManagerProxy extends ClassInvocationStub {
                 } else {
                     try {
                         content = method.invoke(who, args);
+                        if (forceHost && content != null) {
+                            try {
+                                Object originalProvider = Reflector.with(content).field("provider").get();
+                                if (originalProvider instanceof IInterface) {
+                                    IInterface wrapped = GsfProviderInterceptor.wrap((IInterface) originalProvider);
+                                    Reflector.with(content).field("provider").set(wrapped);
+                                    Slog.w(TAG, "Wrapped GSF host provider with GsfProviderInterceptor");
+                                }
+                            } catch (Throwable t) {
+                                Slog.w(TAG, "Failed wrapping GSF provider: " + t.getMessage());
+                            }
+                        }
                         ContentProviderDelegate.update(content, (String) auth);
                         return content;
                     } catch (Throwable e) {

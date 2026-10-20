@@ -410,10 +410,7 @@ public class GoogleLoginActivity extends Activity {
             // Pre-fetch and cache Play Store essential tokens so Play Store never needs GMS auth
             String[] targetServices = new String[] {
                     "oauth2:https://www.googleapis.com/auth/googleplay",
-                    "android",
-                    "oauth2:https://www.googleapis.com/auth/finsky.regular",
-                    "oauth2:https://www.googleapis.com/auth/userinfo.email",
-                    "oauth2:https://www.googleapis.com/auth/userinfo.profile"
+                    "android"
             };
             for (String sName : targetServices) {
                 try {
@@ -425,6 +422,27 @@ public class GoogleLoginActivity extends Activity {
                 } catch (Throwable t) {
                     Slog.w(TAG, "Failed pre-fetching token for " + sName + ": " + t.getMessage());
                 }
+            }
+
+            // Perform Google device checkin to obtain valid GSF android_id
+            // Play Store needs X-DFE-Device-Id header set to this value.
+            try {
+                DeviceCheckinHelper.CheckinResult checkinResult = DeviceCheckinHelper.checkin(this);
+                Slog.w(TAG, "Device checkin SUCCESS: android_id=" + checkinResult.getAndroidIdHex() + " (decimal=" + checkinResult.androidId + ")");
+                // Save to SharedPreferences and local shared file so ContentProvider hook can serve it
+                getSharedPreferences("gsf_checkin", MODE_PRIVATE)
+                        .edit()
+                        .putLong("android_id", checkinResult.androidId)
+                        .putLong("security_token", checkinResult.securityToken)
+                        .apply();
+                try {
+                    java.io.File idFile = new java.io.File(getFilesDir(), "gsf_android_id");
+                    java.io.FileOutputStream fos = new java.io.FileOutputStream(idFile);
+                    fos.write(String.valueOf(checkinResult.androidId).getBytes());
+                    fos.close();
+                } catch (Throwable ignored) {}
+            } catch (Throwable t) {
+                Slog.w(TAG, "Device checkin failed (non-fatal): " + t.getMessage());
             }
 
             // Broadcast LOGIN_ACCOUNTS_CHANGED and GOOGLE_ACCOUNT_CHANGE inside sandbox
