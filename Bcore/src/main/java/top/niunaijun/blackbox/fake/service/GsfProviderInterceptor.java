@@ -119,31 +119,43 @@ public class GsfProviderInterceptor implements InvocationHandler {
             }
         }
         
+        // GSF gservices cursor format is ALWAYS 2 columns: { "name", "value" }
+        // Play Store code calls cursor.getString(1) to get the value.
+        // Returning a single-column cursor causes CursorIndexOutOfBoundsException.
+        
         if (wantsAndroidId) {
             long androidId = readCheckinAndroidId();
             if (androidId != 0) {
-                Slog.w(TAG, "Intercepting gservices query for android_id, returning checkin id=" + Long.toHexString(androidId));
-                MatrixCursor cursor = new MatrixCursor(new String[] { "android_id" }, 1);
-                cursor.addRow(new Object[] { String.valueOf(androidId) });
+                String decId = String.valueOf(androidId);
+                Slog.w(TAG, "Intercepting gservices query for android_id, returning checkin id=" + decId + " (hex=" + Long.toHexString(androidId) + ")");
+                MatrixCursor cursor = new MatrixCursor(new String[] { "name", "value" }, 1);
+                cursor.addRow(new Object[] { "android_id", decId });
                 return cursor;
             }
-            Slog.w(TAG, "No checkin android_id found, delegating to host provider");
+            Slog.w(TAG, "No checkin android_id found, falling back to empty 2-col cursor");
+            // Return an empty 2-column cursor instead of delegating to host
+            // (host provider fails on Android 16 due to UID mismatch)
+            return new MatrixCursor(new String[] { "name", "value" }, 0);
         }
         
-        // Delegate to real provider
+        // For non-android_id queries, try host first, fallback to empty 2-col cursor
         try {
-            return method.invoke(realProvider, args);
+            Object result = method.invoke(realProvider, args);
+            // Verify the cursor has at least 2 columns; if not, wrap it
+            if (result instanceof Cursor) {
+                Cursor c = (Cursor) result;
+                if (c.getColumnCount() < 2) {
+                    Slog.w(TAG, "Host GSF cursor has " + c.getColumnCount() + " cols, expected 2; returning empty 2-col cursor");
+                    c.close();
+                    return new MatrixCursor(new String[] { "name", "value" }, 0);
+                }
+            }
+            return result;
         } catch (java.lang.reflect.InvocationTargetException e) {
             Throwable cause = e.getCause();
-            if (cause != null && (cause.getMessage() != null && 
-                    (cause.getMessage().contains("SecurityException") || 
-                     cause.getMessage().contains("uid") || 
-                     cause.getMessage().contains("permission")))) {
-                Slog.w(TAG, "Host GSF query failed (security): " + cause.getMessage());
-                // Return empty cursor as fallback
-                return null;
-            }
-            throw cause != null ? cause : e;
+            Slog.w(TAG, "Host GSF query failed: " + (cause != null ? cause.getMessage() : e.getMessage()));
+            // Return empty 2-column cursor as safe fallback
+            return new MatrixCursor(new String[] { "name", "value" }, 0);
         }
     }
     
@@ -156,6 +168,7 @@ public class GsfProviderInterceptor implements InvocationHandler {
                 if (androidId != 0) {
                     Slog.w(TAG, "Intercepting gservices call() for android_id, returning checkin id=" + Long.toHexString(androidId));
                     Bundle result = new Bundle();
+                    result.putString("value", String.valueOf(androidId));
                     result.putString("android_id", String.valueOf(androidId));
                     return result;
                 }
@@ -167,7 +180,9 @@ public class GsfProviderInterceptor implements InvocationHandler {
         try {
             return method.invoke(realProvider, args);
         } catch (java.lang.reflect.InvocationTargetException e) {
-            throw e.getCause() != null ? e.getCause() : e;
+            Throwable cause = e.getCause();
+            Slog.w(TAG, "Host GSF call() failed: " + (cause != null ? cause.getMessage() : e.getMessage()));
+            return new Bundle();
         }
     }
     
