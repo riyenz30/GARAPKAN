@@ -85,8 +85,9 @@ public class GoogleLoginActivity extends Activity {
                     mResponse = (AccountAuthenticatorResponse) obj;
                 }
             }
-            if (intent.hasExtra("_B_|_response")) {
-                IBinder binder = intent.getBinderExtra("_B_|_response");
+            Bundle extras = intent.getExtras();
+            if (extras != null && extras.containsKey("_B_|_response")) {
+                IBinder binder = extras.getBinder("_B_|_response");
                 if (binder != null) {
                     mAmResponse = IAccountManagerResponse.Stub.asInterface(binder);
                 }

@@ -675,7 +675,9 @@ public class BAccountManagerService extends IBAccountManagerService.Stub impleme
                 Intent intent = new Intent();
                 intent.setComponent(cn);
                 intent.putExtra("_B_|_UserId", userId);
-                intent.putExtra("_B_|_response", response.asBinder());
+                Bundle bExtras = new Bundle();
+                bExtras.putBinder("_B_|_response", response.asBinder());
+                intent.putExtras(bExtras);
                 intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
 
                 // Launch directly from the host context — not via KEY_INTENT through the sandbox.
