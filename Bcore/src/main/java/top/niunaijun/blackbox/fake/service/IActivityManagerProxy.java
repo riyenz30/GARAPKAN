@@ -376,6 +376,24 @@ public class IActivityManagerProxy extends ClassInvocationStub {
 
             int userId = intent.getIntExtra("_B_|_UserId", -1);
             userId = userId == -1 ? BActivityThread.getUserId() : userId;
+
+            // --- GMS self-bind bypass ---
+            // When GMS binds its own Chimera services (GmsApiService, PersistentApiService,
+            // PersistentDirectBootAwareApiService), the proxy routing breaks the internal
+            // IPC because the ServiceConnection callback never arrives in time, causing
+            // onConnectionFailed → errorCode=8 on Google Sign-In.
+            // Solution: let these self-binds go straight to the real Android system.
+            ComponentName cmp = intent.getComponent();
+            if (callerPkg != null && cmp != null
+                    && "com.google.android.gms".equals(callerPkg)
+                    && "com.google.android.gms".equals(cmp.getPackageName())) {
+                String svcName = cmp.getClassName();
+                if (svcName != null && svcName.startsWith("com.google.android.gms.chimera.")) {
+                    Slog.w(TAG, "BindServiceCommon: GMS self-bind bypass for " + svcName);
+                    return method.invoke(who, args);
+                }
+            }
+
             ResolveInfo resolveInfo = BlackBoxCore.getBPackageManager().resolveService(intent, 0, resolvedType, userId);
             Slog.w(TAG, "BindServiceCommon: resolved=" + (resolveInfo != null ? (resolveInfo.serviceInfo != null ? resolveInfo.serviceInfo.name : "non-null") : "null"));
             if (resolveInfo != null || AppSystemEnv.isOpenPackage(intent.getComponent())) {

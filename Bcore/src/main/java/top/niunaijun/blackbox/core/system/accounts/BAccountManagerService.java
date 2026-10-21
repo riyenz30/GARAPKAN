@@ -1630,6 +1630,7 @@ public class BAccountManagerService extends IBAccountManagerService.Stub impleme
         private int mNumErrors = 0;
 
         IAccountAuthenticator mAuthenticator = null;
+        private boolean mHasRun = false;
 
         private final boolean mStripAuthTokenFromResult;
         protected final BUserAccounts mAccounts;
@@ -1778,6 +1779,11 @@ public class BAccountManagerService extends IBAccountManagerService.Stub impleme
         @Override
         public void onServiceConnected(ComponentName name, IBinder service) {
             top.niunaijun.blackbox.utils.Slog.w(TAG, "Session.onServiceConnected: component=" + name + ", service=" + service);
+            if (mHasRun) {
+                top.niunaijun.blackbox.utils.Slog.w(TAG, "Session.onServiceConnected: already ran, ignoring duplicate callback for " + mAccountType);
+                return;
+            }
+            mHasRun = true;
             mAuthenticator = IAccountAuthenticator.Stub.asInterface(service);
             try {
                 top.niunaijun.blackbox.utils.Slog.w(TAG, "Session.onServiceConnected: invoking run()");

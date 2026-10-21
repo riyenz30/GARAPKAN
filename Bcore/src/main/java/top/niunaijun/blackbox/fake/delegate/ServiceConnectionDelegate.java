@@ -96,7 +96,7 @@ public class ServiceConnectionDelegate extends IServiceConnection.Stub {
 
     private void deliver(IBinder service, Object session, boolean dead) {
         Object target = mConn;
-        Slog.d(TAG, "deliver: component=" + mComponentName + " target=" + target + " service=" + service + " session=" + session + " dead=" + dead);
+        Slog.w(TAG, "deliver: component=" + mComponentName + " target=" + target + " service=" + service + " session=" + session + " dead=" + dead);
         try {
             Method four = connectedMethod(target.getClass(), 4);
             if (four != null) {
