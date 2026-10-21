@@ -83,12 +83,14 @@ public class NativeCore {
             // Query the server for PID→virtual UID mapping
             try {
                 int vUid = BlackBoxCore.getBActivityManager().getUidByPid(callingPid);
+                Slog.w(TAG, "getCallingUid: callingPid=" + callingPid + " myPid=" + Process.myPid()
+                        + " myProcess=" + BActivityThread.getAppProcessName() + " -> vUid=" + vUid);
                 if (vUid > 0) {
                     sPidUidCache.put(callingPid, vUid);
                     return vUid;
                 }
             } catch (Throwable t) {
-                // Server not ready or IPC failed — fall through
+                Slog.w(TAG, "getCallingUid: lookup failed for callingPid=" + callingPid, t);
             }
 
             // Case (c): external system caller with same UID, or unknown PID

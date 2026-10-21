@@ -67,6 +67,9 @@ public class BProcessManagerService implements ISystemService {
                     if (app.bActivityThread != null &&
                             app.bActivityThread.asBinder().isBinderAlive() &&
                             app.bActivityThread.asBinder().pingBinder()) {
+                        if (callingPid > 0 && callingPid != Process.myPid()) {
+                            app.pid = callingPid;
+                        }
                         return app;
                     }
                     Slog.w(TAG, "Process record for " + processName + " exists but binder is dead/null. Re-allocating process.");
@@ -99,7 +102,14 @@ public class BProcessManagerService implements ISystemService {
                 mPidsSelfLocked.remove(app);
                 app = null;
             } else {
-                app.pid = getPid(BlackBoxCore.getContext(), ProxyManifest.getProcessName(app.bpid));
+                // Try to get PID from ActivityManager; fall back to callingPid
+                int pid = getPid(BlackBoxCore.getContext(), ProxyManifest.getProcessName(app.bpid));
+                if (pid <= 0 && callingPid > 0 && callingPid != Process.myPid()) {
+                    pid = callingPid;
+                }
+                app.pid = pid;
+                Slog.w(TAG, "startProcessLocked: " + processName + " bpid=" + app.bpid
+                        + " buid=" + app.buid + " pid=" + app.pid + " callingPid=" + callingPid);
             }
         }
         return app;
@@ -307,6 +317,19 @@ public class BProcessManagerService implements ISystemService {
             for (ProcessRecord processRecord : mPidsSelfLocked) {
                 if (processRecord.pid == pid)
                     return processRecord;
+            }
+            // Fallback: match by bpid from /proc or ActivityManager!
+            // When a process is spawned, its PID might not have been recorded yet.
+            int bpid = bpidOfPid(pid);
+            if (bpid >= 0) {
+                for (ProcessRecord processRecord : mPidsSelfLocked) {
+                    if (processRecord.bpid == bpid) {
+                        processRecord.pid = pid; // Auto-heal PID!
+                        Slog.w(TAG, "findProcessByPid: auto-healed PID " + pid + " for bpid=" + bpid
+                                + " (" + processRecord.processName + ", buid=" + processRecord.buid + ")");
+                        return processRecord;
+                    }
+                }
             }
             return null;
         }

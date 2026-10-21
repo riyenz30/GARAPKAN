@@ -391,6 +391,9 @@ public class BActivityManagerService extends IBActivityManagerService.Stub imple
         if (processRecord != null) {
             return processRecord.buid;
         }
+        // PID not found in process records — log for diagnostics
+        top.niunaijun.blackbox.utils.Slog.w("BActivityManagerService",
+                "getUidByPid: pid=" + pid + " NOT FOUND in process records");
         return -1;
     }
 
