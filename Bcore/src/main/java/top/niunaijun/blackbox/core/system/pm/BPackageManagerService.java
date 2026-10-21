@@ -822,7 +822,10 @@ public class BPackageManagerService extends IBPackageManagerService.Stub impleme
         if (processName == null) {
             return defProcessName;
         }
-        return processName;
+        // Consolidate all sub-processes of a package to the package's main process.
+        // On modern Android (12-16) and OEM skins (HyperOS/MIUI/OneUI), spawning 8-10 separate
+        // OS processes triggers the system LMK to aggressively kill background processes.
+        return defProcessName;
     }
 
     

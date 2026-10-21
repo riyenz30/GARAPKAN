@@ -50,6 +50,11 @@ public class BProcessManagerService implements ISystemService {
         ApplicationInfo info = BPackageManagerService.get().getApplicationInfo(packageName, 0, userId);
         if (info == null)
             return null;
+        if (info.processName != null) {
+            processName = info.processName;
+        } else if (packageName != null) {
+            processName = packageName;
+        }
         ProcessRecord app;
         int buid = BUserHandle.getUid(userId, BPackageManagerService.get().getAppId(packageName));
         synchronized (mProcessLock) {
@@ -140,7 +145,9 @@ public class BProcessManagerService implements ISystemService {
             if (app == null) {
                 String stubProcessName = getProcessName(BlackBoxCore.getContext(), callingPid);
                 int bpid = parseBPid(stubProcessName);
-                startProcessLocked(packageName, processName, userId, bpid, callingPid);
+                ApplicationInfo info = BPackageManagerService.get().getApplicationInfo(packageName, 0, userId);
+                String mainProcess = (info != null && info.processName != null) ? info.processName : packageName;
+                startProcessLocked(packageName, mainProcess, userId, bpid, callingPid);
             }
         }
     }
@@ -249,6 +256,12 @@ public class BProcessManagerService implements ISystemService {
             Map<String, ProcessRecord> processRecordMap = mProcessMap.get(buid);
             if (processRecordMap == null)
                 return null;
+            ApplicationInfo info = BPackageManagerService.get().getApplicationInfo(packageName, 0, userId);
+            String mainProcess = (info != null && info.processName != null) ? info.processName : packageName;
+            ProcessRecord record = processRecordMap.get(mainProcess);
+            if (record != null) {
+                return record;
+            }
             return processRecordMap.get(processName);
         }
     }
