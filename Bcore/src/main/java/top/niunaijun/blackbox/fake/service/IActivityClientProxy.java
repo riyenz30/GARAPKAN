@@ -57,7 +57,7 @@ public class IActivityClientProxy extends ClassInvocationStub {
     }
 
     @Override
-    protected Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
+    public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
         String name = method.getName();
         if (!name.equals("asBinder") && !name.equals("toString") && !name.equals("hashCode") && !name.equals("equals")) {
             Slog.w(TAG, "IActivityClientProxy.invoke: " + name);
