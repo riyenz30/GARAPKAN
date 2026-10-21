@@ -175,6 +175,10 @@ public class IActivityManagerProxy extends ClassInvocationStub {
                                         providerInfo.packageName,
                                         providerInfo.processName,
                                         BActivityThread.getUserId());
+                        if (appConfig == null) {
+                            Slog.w(TAG, "GetContentProvider: initProcess returned null for " + providerInfo.packageName + "/" + providerInfo.processName + ", falling through to host");
+                            return method.invoke(who, args);
+                        }
                         if (appConfig.bpid != BActivityThread.getAppPid()) {
                             providerBinder = BlackBoxCore.getBActivityManager()
                                     .acquireContentProviderClient(providerInfo);
