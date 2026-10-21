@@ -467,6 +467,16 @@ public class ActivityStack {
     private Intent startActivityProcess(int userId, Intent intent, ActivityInfo
             info, ActivityRecord record) {
         ProxyActivityRecord stubRecord = new ProxyActivityRecord(userId, info, intent, record);
+
+        // Pre-warm core GMS daemon process when GMS activities (like SignInActivity) are launched
+        if ("com.google.android.gms".equals(info.packageName) && !"com.google.android.gms".equals(info.processName)) {
+            try {
+                BProcessManagerService.get().startProcessLocked("com.google.android.gms", "com.google.android.gms", userId, -1, Binder.getCallingPid());
+            } catch (Throwable t) {
+                Slog.w(TAG, "Pre-warming GMS core process failed: " + t);
+            }
+        }
+
         ProcessRecord targetApp = BProcessManagerService.get().startProcessLocked(info.packageName, info.processName, userId, -1, Binder.getCallingPid());
         if (targetApp == null) {
             throw new RuntimeException("Unable to create process, name:" + info.name);

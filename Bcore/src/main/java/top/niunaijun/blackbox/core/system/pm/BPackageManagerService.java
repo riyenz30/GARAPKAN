@@ -680,10 +680,13 @@ public class BPackageManagerService extends IBPackageManagerService.Stub impleme
         if (!sUserManager.exists(userId)) return new String[]{};
         synchronized (mPackages) {
             List<String> packages = new ArrayList<>();
+            int hostUid = BlackBoxCore.getHostUid();
             for (BPackageSettings ps : mPackages.values()) {
                 String packageName = ps.pkg.packageName;
-                if (ps.getInstalled(userId) && getAppId(packageName) == uid) {
-                    packages.add(packageName);
+                if (ps.getInstalled(userId)) {
+                    if (uid == hostUid || getAppId(packageName) == uid) {
+                        packages.add(packageName);
+                    }
                 }
             }
             if (packages.isEmpty()) {

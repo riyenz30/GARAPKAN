@@ -24,7 +24,9 @@ public class ProxyService extends Service {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        AppServiceDispatcher.get().onStartCommand(intent, flags, startId);
+        if (intent != null) {
+            AppServiceDispatcher.get().onStartCommand(intent, flags, startId);
+        }
         return START_NOT_STICKY;
     }
 

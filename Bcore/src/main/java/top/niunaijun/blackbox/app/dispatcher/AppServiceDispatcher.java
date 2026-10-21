@@ -34,7 +34,13 @@ public class AppServiceDispatcher {
     private final Handler mHandler = BlackBoxCore.get().getHandler();
 
     public IBinder onBind(Intent proxyIntent) {
+        if (proxyIntent == null) {
+            return null;
+        }
         ProxyServiceRecord serviceRecord = ProxyServiceRecord.create(proxyIntent);
+        if (serviceRecord == null) {
+            return null;
+        }
         Intent intent = serviceRecord.mServiceIntent;
         ServiceInfo serviceInfo = serviceRecord.mServiceInfo;
 
@@ -69,8 +75,11 @@ public class AppServiceDispatcher {
     }
 
     public int onStartCommand(Intent proxyIntent, int flags, int startId) {
+        if (proxyIntent == null) {
+            return START_NOT_STICKY;
+        }
         ProxyServiceRecord stubRecord = ProxyServiceRecord.create(proxyIntent);
-        if (stubRecord.mServiceIntent == null || stubRecord.mServiceInfo == null) {
+        if (stubRecord == null || stubRecord.mServiceIntent == null || stubRecord.mServiceInfo == null) {
             return START_NOT_STICKY;
         }
 

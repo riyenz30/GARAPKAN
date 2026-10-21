@@ -354,12 +354,11 @@ public class IPackageManagerProxy extends BinderInvocationStub {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
             int uid = (Integer) args[0];
-            if (uid == BlackBoxCore.getHostUid()) {
-                args[0] = BActivityThread.getBUid();
-                uid = (int) args[0];
-            }
             String[] packagesForUid = BlackBoxCore.getBPackageManager().getPackagesForUid(uid);
-            Slog.d(TAG, args[0] + " , " + BActivityThread.getAppProcessName() + " GetPackagesForUid: " + Arrays.toString(packagesForUid));
+            if (packagesForUid == null || packagesForUid.length == 0) {
+                packagesForUid = BlackBoxCore.getBPackageManager().getPackagesForUid(BlackBoxCore.getHostUid());
+            }
+            Slog.w(TAG, "GetPackagesForUid: uid=" + uid + " (" + BActivityThread.getAppProcessName() + ") -> " + Arrays.toString(packagesForUid));
             return packagesForUid;
         }
     }

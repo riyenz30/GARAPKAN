@@ -110,6 +110,10 @@ public class IActivityClientProxy extends ClassInvocationStub {
                     + " resultCode=" + resultCode
                     + " data=" + (resultData != null ? resultData.toUri(0) : "null")
                     + " extras=[" + extrasSummary + "]");
+            if (resultData != null && resultData.hasExtra("errorCode")) {
+                int err = resultData.getIntExtra("errorCode", -1);
+                Slog.e(TAG, "finishActivity with errorCode=" + err + " from " + BActivityThread.getAppPackageName(), new Throwable("GMS finishActivity trace"));
+            }
             BActivityManager.get().onFinishActivity(token);
             return method.invoke(who, args);
         }
@@ -177,15 +181,15 @@ public class IActivityClientProxy extends ClassInvocationStub {
     }
 
     /**
-     * Hook getLaunchedFromUid so GMS sees the virtual UID, not the host UID.
+     * Hook getLaunchedFromUid so GMS sees the host Linux UID matching getPackagesForUid.
      */
     @ProxyMethod("getLaunchedFromUid")
     public static class GetLaunchedFromUid extends MethodHook {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            int bUid = BActivityThread.getBUid();
-            Slog.w(TAG, "getLaunchedFromUid: returning virtual uid=" + bUid);
-            return bUid;
+            int hostUid = BlackBoxCore.getHostUid();
+            Slog.w(TAG, "getLaunchedFromUid: returning host uid=" + hostUid);
+            return hostUid;
         }
     }
 
@@ -263,9 +267,9 @@ public class IActivityClientProxy extends ClassInvocationStub {
     public static class GetActivityCallerUid extends MethodHook {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            int bUid = BActivityThread.getBUid();
-            Slog.w(TAG, "getActivityCallerUid: returning virtual uid=" + bUid);
-            return bUid;
+            int hostUid = BlackBoxCore.getHostUid();
+            Slog.w(TAG, "getActivityCallerUid: returning host uid=" + hostUid);
+            return hostUid;
         }
     }
 }
