@@ -386,6 +386,15 @@ public class BActivityManagerService extends IBActivityManagerService.Stub imple
     }
 
     @Override
+    public int getUidByPid(int pid) throws RemoteException {
+        ProcessRecord processRecord = BProcessManagerService.get().findProcessByPid(pid);
+        if (processRecord != null) {
+            return processRecord.buid;
+        }
+        return -1;
+    }
+
+    @Override
     public void systemReady() {
         mBroadcastManager.startup();
     }

@@ -1,6 +1,7 @@
 package top.niunaijun.blackbox.core;
 
 
+import android.os.Binder;
 import android.os.Process;
 import android.util.Log;
 
@@ -8,6 +9,8 @@ import androidx.annotation.Keep;
 
 import java.io.File;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 import dalvik.system.DexFile;
 import top.niunaijun.blackbox.BlackBoxCore;
@@ -20,6 +23,7 @@ import top.niunaijun.blackbox.utils.Slog;
 
 public class NativeCore {
     public static final String TAG = "NativeCore";
+    private static final Map<Integer, Integer> sPidUidCache = new ConcurrentHashMap<>();
 
     static {
 
@@ -48,22 +52,68 @@ public class NativeCore {
             if (origCallingUid > Process.LAST_APPLICATION_UID)
                 return origCallingUid;
 
-            if (origCallingUid == BlackBoxCore.getHostUid()) {
-                // The real Linux UID of this process is the host UID.
-                // Always return the host UID so that Android's
-                // AttributionSource.enforceCallingUid() sees a consistent
-                // Binder.getCallingUid() == AttributionSource.uid == hostUid.
-                // Returning the virtual callingBUid here caused:
-                //   SecurityException: Calling uid: 10003 doesn't match source uid: 10261
-                // on every ContentProvider query/call to system providers (Settings,
-                // Gservices, Phenotype), making Play Store unable to load any config.
+            if (origCallingUid != BlackBoxCore.getHostUid()) {
+                // Not the host UID — some external app calling us, pass through
+                return origCallingUid;
+            }
+
+            // origCallingUid == hostUid — this is either:
+            // (a) another sandbox process calling us (intra-sandbox IPC)
+            // (b) a call within our own process (self-call)
+            // (c) a call from the real Android system using our UID
+
+            int callingPid = Binder.getCallingPid();
+
+            // Case (b): self-call (no incoming transaction, or same-process call)
+            // Must return hostUid here because Android 12+ AttributionSource checks:
+            //   Binder.getCallingUid() == AttributionSource.uid (= Process.myUid() = hostUid)
+            // Returning a virtual UID here crashes every ContentProvider query to system
+            // providers (Settings, Gservices, Phenotype).
+            if (callingPid == Process.myPid()) {
                 return BlackBoxCore.getHostUid();
             }
-            return origCallingUid;
-        } catch (Exception e) {
+
+            // Case (a): check if callingPid belongs to a sandbox process
+            // Use cache to avoid IPC on every Binder.getCallingUid() call
+            Integer cached = sPidUidCache.get(callingPid);
+            if (cached != null) {
+                return cached;
+            }
+
+            // Query the server for PID→virtual UID mapping
+            try {
+                int vUid = BlackBoxCore.getBActivityManager().getUidByPid(callingPid);
+                if (vUid > 0) {
+                    sPidUidCache.put(callingPid, vUid);
+                    return vUid;
+                }
+            } catch (Throwable t) {
+                // Server not ready or IPC failed — fall through
+            }
+
+            // Case (c): external system caller with same UID, or unknown PID
+            // Return hostUid to satisfy AttributionSource.enforceCallingUid()
+            sPidUidCache.put(callingPid, BlackBoxCore.getHostUid());
+            return BlackBoxCore.getHostUid();
+        } catch (Throwable e) {
             Log.e(TAG, "Error in getCallingUid: " + e.getMessage());
-            return Process.myUid();
+            return origCallingUid;
         }
+    }
+
+    /**
+     * Clear the PID→UID cache when a process dies or restarts.
+     * Called from BProcessManagerService when a process record is removed.
+     */
+    public static void invalidatePidUidCache(int pid) {
+        sPidUidCache.remove(pid);
+    }
+
+    /**
+     * Clear the entire PID→UID cache.
+     */
+    public static void clearPidUidCache() {
+        sPidUidCache.clear();
     }
 
     @Keep
