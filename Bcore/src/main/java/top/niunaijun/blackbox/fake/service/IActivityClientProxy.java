@@ -3,6 +3,7 @@ package top.niunaijun.blackbox.fake.service;
 import android.app.ActivityManager;
 import android.content.ComponentName;
 import android.content.Intent;
+import android.content.pm.ApplicationInfo;
 import android.os.IBinder;
 
 import java.lang.reflect.Method;
@@ -187,8 +188,21 @@ public class IActivityClientProxy extends ClassInvocationStub {
     public static class GetLaunchedFromUid extends MethodHook {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
+            IBinder token = (IBinder) args[0];
+            String callingPkg = BlackBoxCore.getBActivityManager()
+                    .getCallingPackage(token, BActivityThread.getUserId());
+            if (callingPkg != null) {
+                try {
+                    ApplicationInfo ai = BlackBoxCore.getBPackageManager().getApplicationInfo(callingPkg, 0, BActivityThread.getUserId());
+                    if (ai != null && ai.uid > 0) {
+                        Slog.w(TAG, "getLaunchedFromUid: returning virtual uid=" + ai.uid + " for " + callingPkg);
+                        return ai.uid;
+                    }
+                } catch (Throwable ignored) {
+                }
+            }
             int hostUid = BlackBoxCore.getHostUid();
-            Slog.w(TAG, "getLaunchedFromUid: returning host uid=" + hostUid);
+            Slog.w(TAG, "getLaunchedFromUid: fallback to host uid=" + hostUid);
             return hostUid;
         }
     }
@@ -267,8 +281,21 @@ public class IActivityClientProxy extends ClassInvocationStub {
     public static class GetActivityCallerUid extends MethodHook {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
+            IBinder token = (IBinder) args[0];
+            String callingPkg = BlackBoxCore.getBActivityManager()
+                    .getCallingPackage(token, BActivityThread.getUserId());
+            if (callingPkg != null) {
+                try {
+                    ApplicationInfo ai = BlackBoxCore.getBPackageManager().getApplicationInfo(callingPkg, 0, BActivityThread.getUserId());
+                    if (ai != null && ai.uid > 0) {
+                        Slog.w(TAG, "getActivityCallerUid: returning virtual uid=" + ai.uid + " for " + callingPkg);
+                        return ai.uid;
+                    }
+                } catch (Throwable ignored) {
+                }
+            }
             int hostUid = BlackBoxCore.getHostUid();
-            Slog.w(TAG, "getActivityCallerUid: returning host uid=" + hostUid);
+            Slog.w(TAG, "getActivityCallerUid: fallback to host uid=" + hostUid);
             return hostUid;
         }
     }

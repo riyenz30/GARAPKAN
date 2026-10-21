@@ -15,8 +15,8 @@ android {
         // Android restricts for apps targeting 29+ (background activity starts,
         // non-SDK interface access). Same value the engine itself uses.
         targetSdk rootProject.ext.targetSdkVersion
-        versionCode 14
-        versionName "1.2.10"
+        versionCode 15
+        versionName "1.2.11"
 
         vectorDrawables.useSupportLibrary = true
         resourceConfigurations += ["en", "in", "zh-rCN"]

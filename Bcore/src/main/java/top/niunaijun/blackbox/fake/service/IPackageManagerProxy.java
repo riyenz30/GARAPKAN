@@ -358,8 +358,68 @@ public class IPackageManagerProxy extends BinderInvocationStub {
             if (packagesForUid == null || packagesForUid.length == 0) {
                 packagesForUid = BlackBoxCore.getBPackageManager().getPackagesForUid(BlackBoxCore.getHostUid());
             }
+            String currentPkg = BActivityThread.getAppPackageName();
+            if (currentPkg != null && packagesForUid != null && packagesForUid.length > 0) {
+                if (!packagesForUid[0].equals(currentPkg)) {
+                    List<String> list = new ArrayList<>(Arrays.asList(packagesForUid));
+                    if (list.remove(currentPkg)) {
+                        list.add(0, currentPkg);
+                        packagesForUid = list.toArray(new String[0]);
+                    }
+                }
+            }
             Slog.w(TAG, "GetPackagesForUid: uid=" + uid + " (" + BActivityThread.getAppProcessName() + ") -> " + Arrays.toString(packagesForUid));
             return packagesForUid;
+        }
+    }
+
+    @ProxyMethod("getNameForUid")
+    public static class GetNameForUid extends MethodHook {
+        @Override
+        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
+            int uid = (Integer) args[0];
+            String[] packages = BlackBoxCore.getBPackageManager().getPackagesForUid(uid);
+            if (packages != null && packages.length > 0) {
+                String currentPkg = BActivityThread.getAppPackageName();
+                if (currentPkg != null) {
+                    for (String p : packages) {
+                        if (currentPkg.equals(p)) {
+                            Slog.w(TAG, "getNameForUid: uid=" + uid + " -> returning currentPkg=" + currentPkg);
+                            return currentPkg;
+                        }
+                    }
+                }
+                Slog.w(TAG, "getNameForUid: uid=" + uid + " -> returning " + packages[0]);
+                return packages[0];
+            }
+            if (uid == BlackBoxCore.getHostUid()) {
+                String currentPkg = BActivityThread.getAppPackageName();
+                if (currentPkg != null) {
+                    Slog.w(TAG, "getNameForUid: host uid=" + uid + " -> returning currentPkg=" + currentPkg);
+                    return currentPkg;
+                }
+            }
+            return method.invoke(who, args);
+        }
+    }
+
+    @ProxyMethod("getNamesForUids")
+    public static class GetNamesForUids extends MethodHook {
+        @Override
+        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
+            int[] uids = (int[]) args[0];
+            if (uids == null) return null;
+            String[] names = new String[uids.length];
+            for (int i = 0; i < uids.length; i++) {
+                int uid = uids[i];
+                String[] pkgs = BlackBoxCore.getBPackageManager().getPackagesForUid(uid);
+                if (pkgs != null && pkgs.length > 0) {
+                    names[i] = pkgs[0];
+                } else if (uid == BlackBoxCore.getHostUid()) {
+                    names[i] = BActivityThread.getAppPackageName();
+                }
+            }
+            return names;
         }
     }
 

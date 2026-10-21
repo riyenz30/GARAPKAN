@@ -307,7 +307,18 @@ public class BPackageManagerService extends IBPackageManagerService.Stub impleme
         if (!sUserManager.exists(userId)) return null;
         if (Objects.equals(packageName, BlackBoxCore.getHostPkg())) {
             try {
-                return BlackBoxCore.getPackageManager().getPackageInfo(packageName, flags);
+                PackageInfo hostPi = BlackBoxCore.getPackageManager().getPackageInfo(packageName, flags);
+                if (hostPi != null && (flags & (PackageManager.GET_SIGNATURES | PackageManager.GET_SIGNING_CERTIFICATES)) != 0) {
+                    BPackageSettings gmsSettings = mPackages.get("com.google.android.gms");
+                    if (gmsSettings != null) {
+                        PackageInfo gmsPi = PackageManagerCompat.generatePackageInfo(gmsSettings, flags, gmsSettings.readUserState(userId), userId);
+                        if (gmsPi != null) {
+                            if (gmsPi.signatures != null) hostPi.signatures = gmsPi.signatures;
+                            if (gmsPi.signingInfo != null) hostPi.signingInfo = gmsPi.signingInfo;
+                        }
+                    }
+                }
+                return hostPi;
             } catch (PackageManager.NameNotFoundException e) {
                 e.printStackTrace();
             }
@@ -681,10 +692,25 @@ public class BPackageManagerService extends IBPackageManagerService.Stub impleme
         synchronized (mPackages) {
             List<String> packages = new ArrayList<>();
             int hostUid = BlackBoxCore.getHostUid();
+            // Direct match on virtual appId
             for (BPackageSettings ps : mPackages.values()) {
                 String packageName = ps.pkg.packageName;
                 if (ps.getInstalled(userId)) {
-                    if (uid == hostUid || getAppId(packageName) == uid) {
+                    if (getAppId(packageName) == uid) {
+                        packages.add(packageName);
+                    }
+                }
+            }
+            // Host Linux UID resolution
+            if (packages.isEmpty() && uid == hostUid) {
+                ProcessRecord callingProc = BProcessManagerService.get().findProcessByPid(getCallingPid());
+                String primaryPkg = callingProc != null ? callingProc.getPackageName() : null;
+                if (primaryPkg != null) {
+                    packages.add(primaryPkg);
+                }
+                for (BPackageSettings ps : mPackages.values()) {
+                    String packageName = ps.pkg.packageName;
+                    if (ps.getInstalled(userId) && !packages.contains(packageName)) {
                         packages.add(packageName);
                     }
                 }
