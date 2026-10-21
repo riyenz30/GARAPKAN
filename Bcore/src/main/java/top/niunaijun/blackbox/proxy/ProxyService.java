@@ -19,11 +19,13 @@ public class ProxyService extends Service {
     @Nullable
     @Override
     public IBinder onBind(Intent intent) {
+        top.niunaijun.blackbox.utils.Slog.d(TAG, "ProxyService onBind: " + intent);
         return AppServiceDispatcher.get().onBind(intent);
     }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
+        top.niunaijun.blackbox.utils.Slog.d(TAG, "ProxyService onStartCommand: " + intent);
         if (intent != null) {
             AppServiceDispatcher.get().onStartCommand(intent, flags, startId);
         }

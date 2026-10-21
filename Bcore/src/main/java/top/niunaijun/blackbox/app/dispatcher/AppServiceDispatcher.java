@@ -54,6 +54,8 @@ public class AppServiceDispatcher {
             return null;
         intent.setExtrasClassLoader(service.getClassLoader());
 
+        top.niunaijun.blackbox.utils.Slog.d(TAG, "onBind: proxyIntent=" + proxyIntent + " target=" + intent + " serviceInfo=" + serviceInfo.name);
+
         ServiceRecord record = findRecord(intent);
         record.incrementAndGetBindCount(intent);
         if (record.hasBinder(intent)) {
@@ -67,9 +69,10 @@ public class AppServiceDispatcher {
         try {
             IBinder iBinder = service.onBind(intent);
             record.addBinder(intent, iBinder);
+            top.niunaijun.blackbox.utils.Slog.d(TAG, "onBind: service=" + serviceInfo.name + " returned binder=" + iBinder);
             return iBinder;
         } catch (Throwable e) {
-            e.printStackTrace();
+            top.niunaijun.blackbox.utils.Slog.e(TAG, "onBind: exception in service.onBind for " + serviceInfo.name, e);
         }
         return null;
     }

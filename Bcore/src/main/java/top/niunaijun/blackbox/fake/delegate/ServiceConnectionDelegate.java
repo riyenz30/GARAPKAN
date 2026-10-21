@@ -38,7 +38,7 @@ public class ServiceConnectionDelegate extends IServiceConnection.Stub {
     private static final Map<String, Method> sConnectedMethods = new ConcurrentHashMap<>();
 
     private final IServiceConnection mConn;
-    private final ComponentName mComponentName;
+    private volatile ComponentName mComponentName;
 
     private ServiceConnectionDelegate(IServiceConnection mConn, ComponentName targetComponent) {
         this.mConn = mConn;
@@ -64,8 +64,12 @@ public class ServiceConnectionDelegate extends IServiceConnection.Stub {
             } catch (RemoteException e) {
                 e.printStackTrace();
             }
-            delegate = new ServiceConnectionDelegate(base, intent.getComponent());
+            delegate = new ServiceConnectionDelegate(base, intent != null ? intent.getComponent() : null);
             sServiceConnectDelegate.put(iBinder, delegate);
+        } else {
+            if (intent != null && intent.getComponent() != null) {
+                delegate.mComponentName = intent.getComponent();
+            }
         }
         return delegate;
     }
@@ -92,6 +96,7 @@ public class ServiceConnectionDelegate extends IServiceConnection.Stub {
 
     private void deliver(IBinder service, Object session, boolean dead) {
         Object target = mConn;
+        Slog.d(TAG, "deliver: component=" + mComponentName + " target=" + target + " service=" + service + " session=" + session + " dead=" + dead);
         try {
             Method four = connectedMethod(target.getClass(), 4);
             if (four != null) {
