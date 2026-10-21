@@ -9,7 +9,9 @@ import android.content.pm.PackageManager;
 import android.content.pm.ProviderInfo;
 import android.content.pm.ResolveInfo;
 import android.content.pm.ServiceInfo;
+import android.os.Binder;
 import android.os.Build;
+import android.os.Process;
 import android.util.Log;
 
 import java.lang.reflect.Method;
@@ -358,17 +360,38 @@ public class IPackageManagerProxy extends BinderInvocationStub {
             if (packagesForUid == null || packagesForUid.length == 0) {
                 packagesForUid = BlackBoxCore.getBPackageManager().getPackagesForUid(BlackBoxCore.getHostUid());
             }
-            String currentPkg = BActivityThread.getAppPackageName();
-            if (currentPkg != null && packagesForUid != null && packagesForUid.length > 0) {
-                if (!packagesForUid[0].equals(currentPkg)) {
+
+            // Determine target package to put at index 0
+            int callingPid = Binder.getCallingPid();
+            String targetFirstPkg = null;
+            if (callingPid > 0 && callingPid != Process.myPid()) {
+                // Incoming IPC from another sandbox process (e.g. CapCut calling GMS)
+                try {
+                    int callerVUid = BlackBoxCore.getBActivityManager().getUidByPid(callingPid);
+                    if (callerVUid > 0) {
+                        String[] callerPkgs = BlackBoxCore.getBPackageManager().getPackagesForUid(callerVUid);
+                        if (callerPkgs != null && callerPkgs.length > 0) {
+                            targetFirstPkg = callerPkgs[0];
+                        }
+                    }
+                } catch (Throwable ignored) {
+                }
+            }
+            if (targetFirstPkg == null) {
+                targetFirstPkg = BActivityThread.getAppPackageName();
+            }
+
+            if (targetFirstPkg != null && packagesForUid != null && packagesForUid.length > 0) {
+                if (!packagesForUid[0].equals(targetFirstPkg)) {
                     List<String> list = new ArrayList<>(Arrays.asList(packagesForUid));
-                    if (list.remove(currentPkg)) {
-                        list.add(0, currentPkg);
+                    if (list.remove(targetFirstPkg)) {
+                        list.add(0, targetFirstPkg);
                         packagesForUid = list.toArray(new String[0]);
                     }
                 }
             }
-            Slog.w(TAG, "GetPackagesForUid: uid=" + uid + " (" + BActivityThread.getAppProcessName() + ") -> " + Arrays.toString(packagesForUid));
+            Slog.w(TAG, "GetPackagesForUid: uid=" + uid + " (proc=" + BActivityThread.getAppProcessName()
+                    + " callingPid=" + callingPid + " first=" + targetFirstPkg + ") -> " + Arrays.toString(packagesForUid));
             return packagesForUid;
         }
     }
@@ -378,6 +401,23 @@ public class IPackageManagerProxy extends BinderInvocationStub {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
             int uid = (Integer) args[0];
+            int callingPid = Binder.getCallingPid();
+
+            // When handling incoming IPC from another sandbox process, resolve caller's name
+            if (uid == BlackBoxCore.getHostUid() && callingPid > 0 && callingPid != Process.myPid()) {
+                try {
+                    int callerVUid = BlackBoxCore.getBActivityManager().getUidByPid(callingPid);
+                    if (callerVUid > 0) {
+                        String[] callerPkgs = BlackBoxCore.getBPackageManager().getPackagesForUid(callerVUid);
+                        if (callerPkgs != null && callerPkgs.length > 0) {
+                            Slog.w(TAG, "getNameForUid: uid=" + uid + " callingPid=" + callingPid + " -> returning caller " + callerPkgs[0]);
+                            return callerPkgs[0];
+                        }
+                    }
+                } catch (Throwable ignored) {
+                }
+            }
+
             String[] packages = BlackBoxCore.getBPackageManager().getPackagesForUid(uid);
             if (packages != null && packages.length > 0) {
                 String currentPkg = BActivityThread.getAppPackageName();

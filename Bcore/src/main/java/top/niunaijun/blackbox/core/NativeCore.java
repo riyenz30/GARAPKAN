@@ -52,51 +52,19 @@ public class NativeCore {
             if (origCallingUid > Process.LAST_APPLICATION_UID)
                 return origCallingUid;
 
-            if (origCallingUid != BlackBoxCore.getHostUid()) {
-                // Not the host UID — some external app calling us, pass through
-                return origCallingUid;
-            }
-
-            // origCallingUid == hostUid — this is either:
-            // (a) another sandbox process calling us (intra-sandbox IPC)
-            // (b) a call within our own process (self-call)
-            // (c) a call from the real Android system using our UID
-
-            int callingPid = Binder.getCallingPid();
-
-            // Case (b): self-call (no incoming transaction, or same-process call)
-            // Must return hostUid here because Android 12+ AttributionSource checks:
-            //   Binder.getCallingUid() == AttributionSource.uid (= Process.myUid() = hostUid)
-            // Returning a virtual UID here crashes every ContentProvider query to system
-            // providers (Settings, Gservices, Phenotype).
-            if (callingPid == Process.myPid()) {
+            // ALWAYS return hostUid for sandbox processes.
+            // Android 12+ AttributionSource.enforceCallingUid() compares
+            // Binder.getCallingUid() vs Process.myUid(). Since Process.myUid()
+            // is NOT hooked (returns hostUid), returning a virtual UID here
+            // causes SecurityException on every intra-sandbox ContentProvider query.
+            //
+            // Caller identification for GMS is handled at the getPackagesForUid()
+            // layer instead, using Binder.getCallingPid() to resolve the calling
+            // app's package from the sandbox process table.
+            if (origCallingUid == BlackBoxCore.getHostUid()) {
                 return BlackBoxCore.getHostUid();
             }
-
-            // Case (a): check if callingPid belongs to a sandbox process
-            // Use cache to avoid IPC on every Binder.getCallingUid() call
-            Integer cached = sPidUidCache.get(callingPid);
-            if (cached != null) {
-                return cached;
-            }
-
-            // Query the server for PID→virtual UID mapping
-            try {
-                int vUid = BlackBoxCore.getBActivityManager().getUidByPid(callingPid);
-                Slog.w(TAG, "getCallingUid: callingPid=" + callingPid + " myPid=" + Process.myPid()
-                        + " myProcess=" + BActivityThread.getAppProcessName() + " -> vUid=" + vUid);
-                if (vUid > 0) {
-                    sPidUidCache.put(callingPid, vUid);
-                    return vUid;
-                }
-            } catch (Throwable t) {
-                Slog.w(TAG, "getCallingUid: lookup failed for callingPid=" + callingPid, t);
-            }
-
-            // Case (c): external system caller with same UID, or unknown PID
-            // Return hostUid to satisfy AttributionSource.enforceCallingUid()
-            sPidUidCache.put(callingPid, BlackBoxCore.getHostUid());
-            return BlackBoxCore.getHostUid();
+            return origCallingUid;
         } catch (Throwable e) {
             Log.e(TAG, "Error in getCallingUid: " + e.getMessage());
             return origCallingUid;
