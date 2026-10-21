@@ -217,6 +217,25 @@ public class ActivityManagerCommonProxy {
     public static class FinishActivity extends MethodHook {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
+            try {
+                IBinder token = (IBinder) args[0];
+                int resultCode = 0;
+                Intent resultData = null;
+                if (args.length > 1 && args[1] instanceof Integer) resultCode = (int) args[1];
+                if (args.length > 2 && args[2] instanceof Intent) resultData = (Intent) args[2];
+                StringBuilder extrasStr = new StringBuilder();
+                if (resultData != null && resultData.getExtras() != null) {
+                    for (String key : resultData.getExtras().keySet()) {
+                        extrasStr.append(key).append("=").append(resultData.getExtras().get(key)).append("; ");
+                    }
+                }
+                Slog.w(TAG, "finishActivity: pkg=" + BActivityThread.getAppPackageName()
+                        + " resultCode=" + resultCode
+                        + " action=" + (resultData != null ? resultData.getAction() : "null")
+                        + " extras=[" + extrasStr + "]");
+            } catch (Throwable t) {
+                Slog.w(TAG, "finishActivity inspect error: " + t);
+            }
             BlackBoxCore.getBActivityManager().onFinishActivity((IBinder) args[0]);
             return method.invoke(who, args);
         }

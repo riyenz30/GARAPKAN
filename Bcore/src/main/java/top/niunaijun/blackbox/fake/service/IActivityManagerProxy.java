@@ -374,6 +374,14 @@ public class IActivityManagerProxy extends ClassInvocationStub {
             int userId = intent.getIntExtra("_B_|_UserId", -1);
             userId = userId == -1 ? BActivityThread.getUserId() : userId;
             ResolveInfo resolveInfo = BlackBoxCore.getBPackageManager().resolveService(intent, 0, resolvedType, userId);
+            String callerPkg = BActivityThread.getAppPackageName();
+            if (intent.getAction() != null && (intent.getAction().contains("signin") || intent.getAction().contains("auth") || intent.getAction().contains("gms") || (intent.getPackage() != null && intent.getPackage().contains("gms")))) {
+                Slog.w(TAG, "BindServiceCommon: caller=" + callerPkg
+                        + " act=" + intent.getAction()
+                        + " pkg=" + intent.getPackage()
+                        + " cmp=" + intent.getComponent()
+                        + " resolved=" + (resolveInfo != null ? (resolveInfo.serviceInfo != null ? resolveInfo.serviceInfo.name : "non-null") : "null"));
+            }
             if (resolveInfo != null || AppSystemEnv.isOpenPackage(intent.getComponent())) {
                 Intent proxyIntent = BlackBoxCore.getBActivityManager().bindService(intent,
                         connection == null ? null : connection.asBinder(),
@@ -410,6 +418,12 @@ public class IActivityManagerProxy extends ClassInvocationStub {
                     args[2] = proxyIntent;
                     return method.invoke(who, args);
                 }
+            }
+            if (intent.getAction() != null && (intent.getAction().contains("signin") || intent.getAction().contains("auth") || intent.getAction().contains("gms") || (intent.getPackage() != null && intent.getPackage().contains("gms")))) {
+                Slog.w(TAG, "BindServiceCommon: FALLTHROUGH to real system! caller=" + BActivityThread.getAppPackageName()
+                        + " act=" + intent.getAction()
+                        + " pkg=" + intent.getPackage()
+                        + " cmp=" + intent.getComponent());
             }
             return method.invoke(who, args);
         } catch (Exception e) {

@@ -156,8 +156,21 @@ public class BPackageManagerService extends IBPackageManagerService.Stub impleme
                 BPackageSettings bPackageSettings = mPackages.get(pkgName);
                 if (bPackageSettings != null) {
                     final BPackage pkg = bPackageSettings.pkg;
-                    return mComponentResolver.queryServices(intent, resolvedType, flags, pkg.services,
+                    List<ResolveInfo> list = mComponentResolver.queryServices(intent, resolvedType, flags, pkg.services,
                             userId);
+                    if (list != null && !list.isEmpty()) {
+                        return list;
+                    }
+                    // Fallback to host PM for mirrored packages (like GMS) when sandbox resolver has no match
+                    try {
+                        List<ResolveInfo> hostList = BlackBoxCore.getContext().getPackageManager()
+                                .queryIntentServices(intent, flags);
+                        if (hostList != null && !hostList.isEmpty()) {
+                            return hostList;
+                        }
+                    } catch (Throwable ignored) {
+                    }
+                    return Collections.emptyList();
                 }
             } else {
                return mComponentResolver.queryServices(intent, resolvedType, flags, userId);
