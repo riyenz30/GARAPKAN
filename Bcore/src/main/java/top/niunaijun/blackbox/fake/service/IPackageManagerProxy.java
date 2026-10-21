@@ -14,6 +14,7 @@ import android.util.Log;
 
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
+import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -133,12 +134,29 @@ public class IPackageManagerProxy extends BinderInvocationStub {
             String packageName = (String) args[0];
             int flags = MethodParameterUtils.toInt(args[1]);
             
-            
-            // No fake PackageInfo — let BPackageManagerService return the real one.
-            // The old hardcoded fake (v33.8.16, uid 10001, no providers/components)
-            // broke Dagger/Hilt DI inside Play Store and caused UID mismatches.
             PackageInfo packageInfo = BlackBoxCore.getBPackageManager().getPackageInfo(packageName, flags, BlackBoxCore.getUserId());
             if (packageInfo != null) {
+                if ((flags & (PackageManager.GET_SIGNATURES | PackageManager.GET_SIGNING_CERTIFICATES)) != 0) {
+                    try {
+                        String certDigest = "none";
+                        if (packageInfo.signingInfo != null && packageInfo.signingInfo.getApkContentsSigners() != null && packageInfo.signingInfo.getApkContentsSigners().length > 0) {
+                            MessageDigest md = MessageDigest.getInstance("SHA-1");
+                            byte[] d = md.digest(packageInfo.signingInfo.getApkContentsSigners()[0].toByteArray());
+                            StringBuilder sb = new StringBuilder();
+                            for (byte b : d) sb.append(String.format("%02X:", b));
+                            certDigest = sb.substring(0, sb.length() - 1);
+                        } else if (packageInfo.signatures != null && packageInfo.signatures.length > 0) {
+                            MessageDigest md = MessageDigest.getInstance("SHA-1");
+                            byte[] d = md.digest(packageInfo.signatures[0].toByteArray());
+                            StringBuilder sb = new StringBuilder();
+                            for (byte b : d) sb.append(String.format("%02X:", b));
+                            certDigest = sb.substring(0, sb.length() - 1);
+                        }
+                        Slog.w(TAG, "getPackageInfo cert check for " + packageName + " (flags=0x" + Integer.toHexString(flags) + "): SHA1=" + certDigest);
+                    } catch (Throwable t) {
+                        Slog.w(TAG, "getPackageInfo cert dump failed: " + t);
+                    }
+                }
                 
                 if (packageInfo.requestedPermissions != null && packageInfo.requestedPermissionsFlags != null) {
                     for (int i = 0; i < packageInfo.requestedPermissions.length; i++) {
@@ -359,8 +377,86 @@ public class IPackageManagerProxy extends BinderInvocationStub {
     public static class GetSharedLibraries extends MethodHook {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            
             return ParceledListSliceCompat.create(new ArrayList<>());
+        }
+    }
+
+    @ProxyMethod("hasSigningCertificate")
+    public static class HasSigningCertificate extends MethodHook {
+        @Override
+        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
+            String packageName = (String) args[0];
+            byte[] certificate = (byte[]) args[1];
+            int type = MethodParameterUtils.toInt(args[2]);
+            Slog.w(TAG, "hasSigningCertificate called for " + packageName + ", type=" + type);
+            PackageInfo packageInfo = BlackBoxCore.getBPackageManager().getPackageInfo(packageName,
+                    PackageManager.GET_SIGNING_CERTIFICATES, BlackBoxCore.getUserId());
+            if (packageInfo != null && packageInfo.signingInfo != null) {
+                android.content.pm.Signature[] signatures = packageInfo.signingInfo.getApkContentsSigners();
+                if (signatures != null) {
+                    for (android.content.pm.Signature sig : signatures) {
+                        if (Arrays.equals(sig.toByteArray(), certificate)) {
+                            Slog.w(TAG, "hasSigningCertificate matched direct bytes for " + packageName);
+                            return true;
+                        }
+                        try {
+                            MessageDigest md256 = MessageDigest.getInstance("SHA-256");
+                            if (Arrays.equals(md256.digest(sig.toByteArray()), certificate)) {
+                                Slog.w(TAG, "hasSigningCertificate matched SHA-256 for " + packageName);
+                                return true;
+                            }
+                            MessageDigest md1 = MessageDigest.getInstance("SHA-1");
+                            if (Arrays.equals(md1.digest(sig.toByteArray()), certificate)) {
+                                Slog.w(TAG, "hasSigningCertificate matched SHA-1 for " + packageName);
+                                return true;
+                            }
+                        } catch (Throwable ignored) {}
+                    }
+                }
+            }
+            if (AppSystemEnv.isOpenPackage(packageName)) {
+                return method.invoke(who, args);
+            }
+            // For GMS or virtual apps in sandbox, grant certificate match if the cert query is for an installed package
+            if (packageInfo != null) {
+                Slog.w(TAG, "hasSigningCertificate: package is installed in sandbox (" + packageName + "), returning true");
+                return true;
+            }
+            return false;
+        }
+    }
+
+    @ProxyMethod("hasUidSigningCertificate")
+    public static class HasUidSigningCertificate extends MethodHook {
+        @Override
+        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
+            int uid = (Integer) args[0];
+            byte[] certificate = (byte[]) args[1];
+            int type = MethodParameterUtils.toInt(args[2]);
+            Slog.w(TAG, "hasUidSigningCertificate called for uid=" + uid + ", type=" + type);
+            return true;
+        }
+    }
+
+    @ProxyMethod("checkSignatures")
+    public static class CheckSignatures extends MethodHook {
+        @Override
+        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
+            String pkg1 = (String) args[0];
+            String pkg2 = (String) args[1];
+            Slog.w(TAG, "checkSignatures: " + pkg1 + " vs " + pkg2);
+            return PackageManager.SIGNATURE_MATCH;
+        }
+    }
+
+    @ProxyMethod("checkUidSignatures")
+    public static class CheckUidSignatures extends MethodHook {
+        @Override
+        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
+            int uid1 = (Integer) args[0];
+            int uid2 = (Integer) args[1];
+            Slog.w(TAG, "checkUidSignatures: " + uid1 + " vs " + uid2);
+            return PackageManager.SIGNATURE_MATCH;
         }
     }
 
