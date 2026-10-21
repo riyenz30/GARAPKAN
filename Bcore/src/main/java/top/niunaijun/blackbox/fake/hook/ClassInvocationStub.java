@@ -53,10 +53,6 @@ public abstract class ClassInvocationStub implements InvocationHandler, IInjectH
         }
 
         onBindMethod();
-        Class<?>[] declaredClasses = this.getClass().getDeclaredClasses();
-        for (Class<?> declaredClass : declaredClasses) {
-            initAnnotation(declaredClass);
-        }
         ScanClass scanClass = this.getClass().getAnnotation(ScanClass.class);
         if (scanClass != null) {
             for (Class<?> aClass : scanClass.value()) {
@@ -64,6 +60,10 @@ public abstract class ClassInvocationStub implements InvocationHandler, IInjectH
                     initAnnotation(declaredClass);
                 }
             }
+        }
+        Class<?>[] declaredClasses = this.getClass().getDeclaredClasses();
+        for (Class<?> declaredClass : declaredClasses) {
+            initAnnotation(declaredClass);
         }
     }
 

@@ -369,19 +369,17 @@ public class IActivityManagerProxy extends ClassInvocationStub {
                 return method.invoke(who, args);
             }
 
-            
+            // Log ALL bind attempts from GMS processes
+            String callerPkg = BActivityThread.getAppPackageName();
+            Slog.w(TAG, "BindServiceCommon: caller=" + callerPkg
+                    + " act=" + intent.getAction()
+                    + " pkg=" + intent.getPackage()
+                    + " cmp=" + intent.getComponent());
 
             int userId = intent.getIntExtra("_B_|_UserId", -1);
             userId = userId == -1 ? BActivityThread.getUserId() : userId;
             ResolveInfo resolveInfo = BlackBoxCore.getBPackageManager().resolveService(intent, 0, resolvedType, userId);
-            String callerPkg = BActivityThread.getAppPackageName();
-            if (intent.getAction() != null && (intent.getAction().contains("signin") || intent.getAction().contains("auth") || intent.getAction().contains("gms") || (intent.getPackage() != null && intent.getPackage().contains("gms")))) {
-                Slog.w(TAG, "BindServiceCommon: caller=" + callerPkg
-                        + " act=" + intent.getAction()
-                        + " pkg=" + intent.getPackage()
-                        + " cmp=" + intent.getComponent()
-                        + " resolved=" + (resolveInfo != null ? (resolveInfo.serviceInfo != null ? resolveInfo.serviceInfo.name : "non-null") : "null"));
-            }
+            Slog.w(TAG, "BindServiceCommon: resolved=" + (resolveInfo != null ? (resolveInfo.serviceInfo != null ? resolveInfo.serviceInfo.name : "non-null") : "null"));
             if (resolveInfo != null || AppSystemEnv.isOpenPackage(intent.getComponent())) {
                 Intent proxyIntent = BlackBoxCore.getBActivityManager().bindService(intent,
                         connection == null ? null : connection.asBinder(),

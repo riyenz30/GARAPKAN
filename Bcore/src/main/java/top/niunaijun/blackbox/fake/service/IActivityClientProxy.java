@@ -83,11 +83,32 @@ public class IActivityClientProxy extends ClassInvocationStub {
             int resultCode = 0;
             Intent resultData = null;
             try {
-                if (args.length > 1) resultCode = (int) args[1];
-                if (args.length > 2) resultData = (Intent) args[2];
-            } catch (Exception ignored) {}
-            Slog.w(TAG, "finishActivity: resultCode=" + resultCode
-                    + " resultData=" + (resultData != null ? resultData.toUri(0) : "null"));
+                if (args.length > 1 && args[1] instanceof Integer) resultCode = (int) args[1];
+                if (args.length > 2 && args[2] instanceof Intent) resultData = (Intent) args[2];
+            } catch (Throwable ignored) {}
+            String extrasSummary = "none";
+            if (resultData != null) {
+                try {
+                    android.os.Bundle extras = resultData.getExtras();
+                    if (extras != null) {
+                        StringBuilder sb = new StringBuilder();
+                        for (String key : extras.keySet()) {
+                            try {
+                                sb.append(key).append("=").append(extras.get(key)).append(", ");
+                            } catch (Throwable t) {
+                                sb.append(key).append("=<unreadable>, ");
+                            }
+                        }
+                        extrasSummary = sb.toString();
+                    }
+                } catch (Throwable t) {
+                    extrasSummary = "unreadable: " + t.getMessage();
+                }
+            }
+            Slog.w(TAG, "finishActivity: pkg=" + BActivityThread.getAppPackageName()
+                    + " resultCode=" + resultCode
+                    + " data=" + (resultData != null ? resultData.toUri(0) : "null")
+                    + " extras=[" + extrasSummary + "]");
             BActivityManager.get().onFinishActivity(token);
             return method.invoke(who, args);
         }
