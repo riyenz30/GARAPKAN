@@ -1,6 +1,7 @@
 package top.niunaijun.blackbox.fake.service;
 
 import android.app.ActivityManager;
+import android.content.ComponentName;
 import android.content.Intent;
 import android.os.IBinder;
 
@@ -184,6 +185,86 @@ public class IActivityClientProxy extends ClassInvocationStub {
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
             int bUid = BActivityThread.getBUid();
             Slog.w(TAG, "getLaunchedFromUid: returning virtual uid=" + bUid);
+            return bUid;
+        }
+    }
+
+    /**
+     * Hook getCallingActivity on Android 12+ (IActivityClientController).
+     * Returns virtual caller ComponentName instead of host's ProxyActivity.
+     */
+    @ProxyMethod("getCallingActivity")
+    public static class GetCallingActivity extends MethodHook {
+        @Override
+        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
+            IBinder token = (IBinder) args[0];
+            ComponentName callingActivity = BlackBoxCore.getBActivityManager()
+                    .getCallingActivity(token, BActivityThread.getUserId());
+            String hostPkg = BlackBoxCore.getHostPkg();
+            if (callingActivity != null && !callingActivity.getPackageName().equals(hostPkg)) {
+                Slog.w(TAG, "getCallingActivity: returning virtual caller=" + callingActivity);
+                return callingActivity;
+            }
+            String callingPkg = BlackBoxCore.getBActivityManager()
+                    .getCallingPackage(token, BActivityThread.getUserId());
+            if (callingPkg != null && !callingPkg.equals(hostPkg)) {
+                ComponentName fallback = new ComponentName(callingPkg, "com.google.android.gms.auth.api.signin.internal.SignInHubActivity");
+                Slog.w(TAG, "getCallingActivity: fallback to " + fallback);
+                return fallback;
+            }
+            Slog.w(TAG, "getCallingActivity: returning null (no virtual caller)");
+            return null;
+        }
+    }
+
+    /**
+     * Hook getCallingPackage on Android 12+ (IActivityClientController).
+     * Returns virtual caller package name instead of host package.
+     */
+    @ProxyMethod("getCallingPackage")
+    public static class GetCallingPackage extends MethodHook {
+        @Override
+        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
+            IBinder token = (IBinder) args[0];
+            String callingPkg = BlackBoxCore.getBActivityManager()
+                    .getCallingPackage(token, BActivityThread.getUserId());
+            String hostPkg = BlackBoxCore.getHostPkg();
+            if (callingPkg != null && !callingPkg.equals(hostPkg)) {
+                Slog.w(TAG, "getCallingPackage: returning virtual caller=" + callingPkg);
+                return callingPkg;
+            }
+            String appPkg = BActivityThread.getAppPackageName();
+            if (appPkg != null && !appPkg.equals(hostPkg)) {
+                Slog.w(TAG, "getCallingPackage: fallback to appPkg=" + appPkg);
+                return appPkg;
+            }
+            Slog.w(TAG, "getCallingPackage: returning null");
+            return null;
+        }
+    }
+
+    @ProxyMethod("getActivityCallerPackage")
+    public static class GetActivityCallerPackage extends MethodHook {
+        @Override
+        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
+            IBinder token = (IBinder) args[0];
+            String callingPkg = BlackBoxCore.getBActivityManager()
+                    .getCallingPackage(token, BActivityThread.getUserId());
+            String hostPkg = BlackBoxCore.getHostPkg();
+            if (callingPkg != null && !callingPkg.equals(hostPkg)) {
+                Slog.w(TAG, "getActivityCallerPackage: returning virtual caller=" + callingPkg);
+                return callingPkg;
+            }
+            return method.invoke(who, args);
+        }
+    }
+
+    @ProxyMethod("getActivityCallerUid")
+    public static class GetActivityCallerUid extends MethodHook {
+        @Override
+        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
+            int bUid = BActivityThread.getBUid();
+            Slog.w(TAG, "getActivityCallerUid: returning virtual uid=" + bUid);
             return bUid;
         }
     }

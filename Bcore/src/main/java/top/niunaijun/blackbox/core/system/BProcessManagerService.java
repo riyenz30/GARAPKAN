@@ -64,9 +64,15 @@ public class BProcessManagerService implements ISystemService {
                     if (app.initLock != null) {
                         app.initLock.block();
                     }
-                    if (app.bActivityThread != null) {
+                    if (app.bActivityThread != null &&
+                            app.bActivityThread.asBinder().isBinderAlive() &&
+                            app.bActivityThread.asBinder().pingBinder()) {
                         return app;
                     }
+                    Slog.w(TAG, "Process record for " + processName + " exists but binder is dead/null. Re-allocating process.");
+                    bProcess.remove(processName);
+                    mPidsSelfLocked.remove(app);
+                    app = null;
                 }
                 bpid = getUsingBPidL();
                 Slog.d(TAG, "init bUid = " + buid + ", bPid = " + bpid);

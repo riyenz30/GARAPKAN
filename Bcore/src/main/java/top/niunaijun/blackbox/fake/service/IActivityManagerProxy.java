@@ -403,9 +403,15 @@ public class IActivityManagerProxy extends ClassInvocationStub {
                     proxyIntent.getComponent().getPackageName().equals(BlackBoxCore.getHostPkg())){
                     int flagsIndex = getFlagsIndex(args);
                     if (flagsIndex >= 0) {
-                        int flags = MethodParameterUtils.toInt(args[flagsIndex]);
-                        flags &= ~Context.BIND_EXTERNAL_SERVICE;
-                        args[flagsIndex] = flags;
+                        if (args[flagsIndex] instanceof Long) {
+                            long flags = (Long) args[flagsIndex];
+                            flags &= ~Context.BIND_EXTERNAL_SERVICE;
+                            args[flagsIndex] = flags;
+                        } else {
+                            int flags = MethodParameterUtils.toInt(args[flagsIndex]);
+                            flags &= ~Context.BIND_EXTERNAL_SERVICE;
+                            args[flagsIndex] = flags;
+                        }
                     }
                 }
                 if (callingPackageIndex >= 0 && callingPackageIndex < args.length) {
@@ -414,7 +420,9 @@ public class IActivityManagerProxy extends ClassInvocationStub {
 
                 if (proxyIntent != null) {
                     args[2] = proxyIntent;
-                    return method.invoke(who, args);
+                    Object res = method.invoke(who, args);
+                    Slog.w(TAG, "BindServiceCommon: method.invoke returned " + res + " for " + (intent.getComponent() != null ? intent.getComponent() : intent.getAction()));
+                    return res;
                 }
             }
             if (intent.getAction() != null && (intent.getAction().contains("signin") || intent.getAction().contains("auth") || intent.getAction().contains("gms") || (intent.getPackage() != null && intent.getPackage().contains("gms")))) {

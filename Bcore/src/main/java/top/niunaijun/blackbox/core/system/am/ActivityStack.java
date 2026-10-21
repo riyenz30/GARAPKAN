@@ -717,8 +717,8 @@ public class ActivityStack {
                     return resultTo.info.packageName;
                 }
             }
-            Slog.w(TAG, "getCallingPackage: resultTo not found for token=" + token + ", fallback=" + BlackBoxCore.getHostPkg());
-            return BlackBoxCore.getHostPkg();
+            Slog.w(TAG, "getCallingPackage: resultTo not found for token=" + token + ", returning null");
+            return null;
         }
     }
 
@@ -729,10 +729,12 @@ public class ActivityStack {
             if (activityRecordByToken != null) {
                 ActivityRecord resultTo = findActivityRecordByToken(userId, activityRecordByToken.resultTo);
                 if (resultTo != null) {
+                    Slog.w(TAG, "getCallingActivity: " + resultTo.component + " for " + activityRecordByToken.component);
                     return resultTo.component;
                 }
             }
-            return new ComponentName(BlackBoxCore.getHostPkg(), ProxyActivity.P0.class.getName());
+            Slog.w(TAG, "getCallingActivity: resultTo not found for token=" + token + ", returning null");
+            return null;
         }
     }
 
